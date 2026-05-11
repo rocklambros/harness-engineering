@@ -1,0 +1,112 @@
+{
+  "_documentation": [
+    "Windows harness Claude Code settings template.",
+    "Structural skeleton. Phase 3 fills permissions, Phase 4 fills MCP allowlist,",
+    "Phase 0 fills version pin and model defaults. Final form lives here after Phase 5.",
+    "",
+    "Schema reflects Claude Code v2.1.x as documented in research/Claude_Architecture.md.",
+    "<NEEDS-WINDOWS-PORT-VALIDATION>: Phase 0 verifies the installed Claude Code on Windows",
+    "honors the same schema. QC.5 re-evaluates on minor-version bump.",
+    "",
+    "Path conventions in deny rules and hook references use forward slash where Claude Code",
+    "accepts it. Phase 3 records any places where backslash is required for a Windows-native",
+    "cmdlet or registry call.",
+    "",
+    "JSON does not support comments. Documentation lives in _documentation keys",
+    "that Claude Code ignores. Phase 5 verifies strict JSON parsing after fill."
+  ],
+
+  "_claude_code_version_pin": "<TBD-PHASE-0>",
+  "_platform": "windows-x64",
+  "_subsystem": "<TBD-PHASE-2>",
+
+  "permissions": {
+    "_documentation": [
+      "Deny rules evaluated first per Claude_Architecture.md §5.2.",
+      "Broad deny beats narrow allow.",
+      "Server-prefix rules strip whole tool families before invocation.",
+      "Phase 3 populates deny rules from windows/harness/rules/.",
+      "Phase 4 adds MCP server allowlist entries.",
+      "Windows path patterns: forward slash where accepted; backslash where required."
+    ],
+    "defaultMode": "default",
+    "allow": [],
+    "deny": [
+      "<TBD-PHASE-3>"
+    ],
+    "additionalDirectories": [
+      "<TBD-PHASE-0>"
+    ]
+  },
+
+  "hooks": {
+    "_documentation": [
+      "Hook registration per Claude_Architecture.md §5.3 and §6.",
+      "Hook scripts in windows/harness/hooks/ populated by Phase 3.",
+      "Hook script language: .ps1 by default; .sh via WSL2 routing if Phase 2 elected.",
+      "<NEEDS-WINDOWS-PORT-VALIDATION>: hook script execution model on Windows verified",
+      "against the Claude Code runtime before Phase 3 ports Mac hook patterns."
+    ],
+    "PreToolUse": "<TBD-PHASE-3>",
+    "PostToolUse": "<TBD-PHASE-3>",
+    "PostToolUseFailure": "<TBD-PHASE-3>",
+    "PermissionRequest": "<TBD-PHASE-3>",
+    "PermissionDenied": "<TBD-PHASE-3>",
+    "SessionStart": "<TBD-PHASE-3>",
+    "UserPromptSubmit": "<TBD-PHASE-3>",
+    "Stop": "<TBD-PHASE-3>",
+    "SubagentStop": "<TBD-PHASE-3>",
+    "PreCompact": "<TBD-PHASE-3>"
+  },
+
+  "mcpServers": {
+    "_documentation": [
+      "MCP server allowlist. Each entry is a permission grant.",
+      "Defaults empty. Phase 4 adds with rationale.",
+      "<NEEDS-WINDOWS-PORT-VALIDATION>: each server's Windows availability verified before adoption.",
+      "Go binaries usually portable. Python typically works. npm sometimes hits native-module issues."
+    ]
+  },
+
+  "model": {
+    "_documentation": [
+      "Default model for the main session. Subagent model selection per-Task invocation.",
+      "Affects cache economy per QC.4a."
+    ],
+    "default": "<TBD-PHASE-0>",
+    "subagentDefault": "<TBD-PHASE-0>"
+  },
+
+  "sandbox": {
+    "_documentation": [
+      "Shell sandboxing per Claude_Architecture.md §5.4.",
+      "<NEEDS-WINDOWS-PORT-VALIDATION>: macOS sandbox primitives do not exist on Windows.",
+      "Phase 0 verifies what Claude Code's sandbox implementation provides on Windows",
+      "at the pinned version. Windows-equivalent primitives include AppContainer,",
+      "Windows Sandbox, and job objects. Fallback posture recorded in PHASE-0-DECISIONS.md",
+      "if sandboxing is not yet implemented for this platform."
+    ],
+    "enabled": "<TBD-PHASE-0>",
+    "excludePatterns": []
+  },
+
+  "cache_control": {
+    "_documentation": [
+      "Cache discipline per QC.4a. Applies to direct API/SDK use.",
+      "1h TTL required for cache reuse beyond 5 minutes. Default reverted to 5m March 2026.",
+      "Telemetry-off drops 1h TTL silently."
+    ],
+    "ttl": "1h",
+    "telemetry": true
+  },
+
+  "logging": {
+    "_documentation": [
+      "Session log path and retention.",
+      "<NEEDS-WINDOWS-PORT-VALIDATION>: Claude Code's Windows session log path differs from Mac and Linux.",
+      "Phase 0 records the actual path on Windows."
+    ],
+    "sessionLogPath": "<TBD-PHASE-0>",
+    "retentionDays": "<TBD-PHASE-0>"
+  }
+}
