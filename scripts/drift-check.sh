@@ -73,7 +73,11 @@ declare -a POISON_PATTERNS=(
 )
 
 # Find all CLAUDE.md files in the repo (excluding .git and node_modules).
-mapfile -t CLAUDE_FILES < <(
+# while-read pattern instead of mapfile so the script runs on bash 3.2 (macOS system bash).
+CLAUDE_FILES=()
+while IFS= read -r line; do
+    CLAUDE_FILES+=("$line")
+done < <(
     find . \
         -path ./.git -prune -o \
         -path ./node_modules -prune -o \
