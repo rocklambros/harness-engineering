@@ -30,9 +30,23 @@
 #    break cache reuse silently. The script flags these patterns
 #    in any file that contributes to the cached prefix.
 #
-# Exit code 0: clean. Exit code 1: drift detected (script lists which
-# files and which rule). Exit code 2: script error (missing
-# dependencies, unreadable files, etc.).
+# Exit code 0: clean OR user-level chain over cap (WARN, not FAIL).
+# Exit code 1: project-controlled drift detected (root + platform CLAUDE.md
+# over cap, or cached-prefix poisoning pattern present). Exit code 2:
+# script error (missing dependencies, unreadable files, etc.).
+#
+# FAIL vs. WARN split: the project-controlled hierarchy (root CLAUDE.md
+# plus one platform's CLAUDE.md plus that platform's harness/CLAUDE.md)
+# is what this repo's authors directly control on every commit. That
+# portion remains a hard FAIL above the cap. The user-level chain
+# (~/.claude/CLAUDE.md and its transitive @imports) is per-machine
+# state outside this repo. Mac Phase 2 Q3 / Post-Mac 4 Stage 4 elected
+# to keep SuperClaude framework files @imported there, which holds
+# the user-level chain above the cap by design. Pre-commit blocking
+# on per-machine state would block every commit from that machine
+# while saying nothing about the project content the commit changes.
+# User-level pressure becomes WARN; project-controlled pressure stays
+# FAIL.
 #
 # Invoke directly:
 #   bash scripts/drift-check.sh
@@ -171,19 +185,25 @@ for f in */harness/CLAUDE.md; do
     fi
 done
 
-# Per-platform session totals. Each platform's worst case is the sum
-# of root CLAUDE.md, an optional platform-level CLAUDE.md, the
-# platform's operational harness/CLAUDE.md, and the user-level cached
-# prefix (~/.claude/CLAUDE.md and its transitive @import chain).
+# Per-platform session totals. PROJECT_WORST_CASE excludes the user-level
+# chain (this repo's authors control it; it's the FAIL gate).
+# FULL_WORST_CASE includes the user-level chain (per-machine state;
+# WARN gate when it pushes the total over the cap with project-only
+# under).
 declare -a SESSION_REPORT=()
-WORST_CASE=$((ROOT_LINES + USER_LEVEL_TOTAL))
+PROJECT_WORST_CASE=$ROOT_LINES
+FULL_WORST_CASE=$((ROOT_LINES + USER_LEVEL_TOTAL))
 for p in "${PLATFORMS[@]}"; do
     platform_lines=$(lines_or_zero "./$p/CLAUDE.md")
     harness_lines=$(lines_or_zero "./$p/harness/CLAUDE.md")
-    session_total=$((ROOT_LINES + platform_lines + harness_lines + USER_LEVEL_TOTAL))
+    project_total=$((ROOT_LINES + platform_lines + harness_lines))
+    session_total=$((project_total + USER_LEVEL_TOTAL))
     SESSION_REPORT+=("  $p session: $session_total lines (root=$ROOT_LINES, $p/CLAUDE.md=$platform_lines, $p/harness/CLAUDE.md=$harness_lines, user-level=$USER_LEVEL_TOTAL)")
-    if [ "$session_total" -gt "$WORST_CASE" ]; then
-        WORST_CASE=$session_total
+    if [ "$project_total" -gt "$PROJECT_WORST_CASE" ]; then
+        PROJECT_WORST_CASE=$project_total
+    fi
+    if [ "$session_total" -gt "$FULL_WORST_CASE" ]; then
+        FULL_WORST_CASE=$session_total
     fi
 done
 
@@ -211,9 +231,28 @@ for f in "${CLAUDE_FILES[@]}"; do
 done
 
 line_count_status=0
-if [ "$WORST_CASE" -gt "$LINE_CAP" ]; then
+if [ "$PROJECT_WORST_CASE" -gt "$LINE_CAP" ]; then
     line_count_status=1
-    echo "FAIL: worst-case per-session CLAUDE.md hierarchy is $WORST_CASE lines, over the $LINE_CAP cap."
+    echo "FAIL: project-controlled CLAUDE.md hierarchy (root + platform) is $PROJECT_WORST_CASE lines, over the $LINE_CAP cap."
+    if [ ${#SESSION_REPORT[@]} -gt 0 ]; then
+        echo "Per-platform session totals (full, incl. user-level):"
+        for line in "${SESSION_REPORT[@]}"; do
+            echo "$line"
+        done
+    fi
+    if [ ${#OTHER_FILES[@]} -gt 0 ]; then
+        echo "CLAUDE.md files outside the root/platform pattern:"
+        for f in "${OTHER_FILES[@]}"; do
+            echo "  $(wc -l < "$f") $f"
+        done
+    fi
+    echo "QC.4b context discipline: trim the project CLAUDE.md hierarchy to under $LINE_CAP lines."
+elif [ "$FULL_WORST_CASE" -gt "$LINE_CAP" ]; then
+    # Project-only is under cap; user-level chain pushes total over. WARN, not FAIL.
+    echo "WARN: full worst-case per-session hierarchy is $FULL_WORST_CASE lines, over the $LINE_CAP cap."
+    echo "Project-controlled portion is $PROJECT_WORST_CASE lines (under cap)."
+    echo "User-level chain accounts for $USER_LEVEL_TOTAL lines (per-machine state)."
+    echo "SuperClaude operational continuity per Mac Phase 2 Q3 / Post-Mac 4 Stage 4 is the accepted QC.4b exception."
     if [ ${#SESSION_REPORT[@]} -gt 0 ]; then
         echo "Per-platform session totals:"
         for line in "${SESSION_REPORT[@]}"; do
@@ -227,15 +266,8 @@ if [ "$WORST_CASE" -gt "$LINE_CAP" ]; then
         done
         echo "  Total: $USER_LEVEL_TOTAL lines"
     fi
-    if [ ${#OTHER_FILES[@]} -gt 0 ]; then
-        echo "CLAUDE.md files outside the root/platform pattern:"
-        for f in "${OTHER_FILES[@]}"; do
-            echo "  $(wc -l < "$f") $f"
-        done
-    fi
-    echo "QC.4b context discipline: trim the worst-case session to under $LINE_CAP lines."
-elif [ "$WORST_CASE" -gt "$LINE_TARGET" ]; then
-    echo "WARN: worst-case per-session CLAUDE.md hierarchy is $WORST_CASE lines, over the $LINE_TARGET target."
+elif [ "$FULL_WORST_CASE" -gt "$LINE_TARGET" ]; then
+    echo "WARN: worst-case per-session CLAUDE.md hierarchy is $FULL_WORST_CASE lines, over the $LINE_TARGET target."
     if [ ${#SESSION_REPORT[@]} -gt 0 ]; then
         echo "Per-platform session totals:"
         for line in "${SESSION_REPORT[@]}"; do
@@ -286,5 +318,5 @@ if [ "$line_count_status" -ne 0 ] || [ "$poison_status" -ne 0 ]; then
     exit 1
 fi
 
-echo "drift-check: OK (worst-case per-session $WORST_CASE lines across ${#CLAUDE_FILES[@]} CLAUDE.md file(s) plus user-level chain of ${#USER_LEVEL_CHAIN[@]} file(s) / $USER_LEVEL_TOTAL lines)"
+echo "drift-check: OK (project worst-case $PROJECT_WORST_CASE lines, full worst-case $FULL_WORST_CASE lines incl. user-level chain of ${#USER_LEVEL_CHAIN[@]} file(s) / $USER_LEVEL_TOTAL lines)"
 exit 0
