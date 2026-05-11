@@ -1,0 +1,87 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+build/
+dist/
+.ipynb_checkpoints/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.npm/
+.yarn/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+.secrets/
+secrets/
+.credentials
+
+# Claude Code local state that does not belong in the repo
+.claude/local/
+.claude/cache/
+.claude/sessions/
+
+# Build-internal phase outputs.
+# Pruned or moved before publish per CHECKPOINT.md.
+phase-outputs/
+
+# Pre-build planning artifacts and live project state.
+# These live in the working directory but are not committed.
+CHECKPOINT.md
+CONVERSATION_HISTORY.md
+PROJECT_ATTACHMENTS_CHECKLIST.md
+PROJECT_SYSTEM_PROMPT.md
+
+# Working copies of research docs that diverge from the canonical versions in research/
+research/*.draft.md
+research/*.bak.md
+
+# OS and editor temp files
+*.tmp
+*.temp
+.directory
+Thumbs.db
+desktop.ini

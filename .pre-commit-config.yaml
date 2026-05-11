@@ -1,0 +1,73 @@
+# Pre-commit configuration for harness-engineering.
+#
+# Why this exists: the Quality Contract (foundation/00-quality-contract.md)
+# requires secret scanning, drift checks on the cached prefix, and a
+# defensive baseline before any commit lands. Pre-commit is the lowest-cost
+# place to enforce these. CI re-runs the same checks because users can
+# bypass pre-commit with --no-verify.
+#
+# All versions are pinned per QC.1 (no floating ranges).
+#
+# Run on every commit. To run manually: `pre-commit run --all-files`.
+
+repos:
+  # Repository hygiene baseline.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1024']
+      - id: check-case-conflict
+      - id: check-symlinks
+      - id: destroyed-symlinks
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # Shell script linting. Hook scripts are security-critical;
+  # shellcheck catches the common foot-guns before they ship.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: ['--severity=warning']
+
+  # Markdown linting. Keeps the prose consistent across foundation
+  # documents and platform sections.
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.14.0
+    hooks:
+      - id: markdownlint-cli2
+        args: ['--fix']
+
+  # Secret scanning. QC.1 / NIST PS.1.1.
+  # The baseline file (.secrets.baseline) suppresses known false positives
+  # and gets generated with: `detect-secrets scan > .secrets.baseline`.
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args:
+          - '--baseline'
+          - '.secrets.baseline'
+        exclude: |
+          (?x)^(
+            research/.*\.md|
+            \.secrets\.baseline
+          )$
+
+  # Project-local drift check. Enforces QC.4b context-window discipline:
+  # CLAUDE.md hierarchy under 400 lines, no timestamps or per-run state
+  # in cached prefix.
+  - repo: local
+    hooks:
+      - id: drift-check
+        name: harness drift check
+        entry: bash scripts/drift-check.sh
+        language: system
+        pass_filenames: false
+        always_run: true
