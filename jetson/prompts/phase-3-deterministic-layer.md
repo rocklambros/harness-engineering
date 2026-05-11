@@ -46,10 +46,10 @@ For each threat Phase 2 elected to enforce in a hook, write a hook script in `je
 - Sets `permissionDecision` to `deny` or `ask` when blocking; never to `allow` to bypass subsequent checks.
 - Returns within a reasonable timeout.
 
-`<NEEDS-JETSON-PORT-VALIDATION>` per hook: any Mac hook ported here is verified for:
+Mac wrote 6 Python hooks uniformly (per `phase-outputs/PHASE-3-NOTES.md`), choosing Python over shell because every hook parses JSON on stdin. If Jetson follows the same Python uniformity, the port verification narrows to Python runtime parity (interpreter path, `json` stdlib, ARM64 wheels for any imported libs). If Jetson elects shell scripts, the per-hook port verifies:
 
-- GNU vs BSD coreutils command compatibility (`grep`, `sed`, `find`, `xargs`).
-- Linux-specific path constructs (e.g., `/proc/`, `/sys/`, `/dev/shm/`).
+- GNU vs BSD coreutils command compatibility (`grep`, `sed`, `find`, `xargs`). Mac runs BSD; Jetson runs GNU.
+- Linux-specific path constructs (e.g., `/proc/`, `/sys/`, `/dev/shm/`) that do not exist on Mac.
 - Linux signal handling differences from macOS.
 - Bash version (`echo $BASH_VERSION`) matches expectations on the JetPack base.
 
@@ -66,7 +66,11 @@ Optional hooks Phase 2 may have elected: same as Mac (PreCompact preserver, User
 
 For each blanket-deny pattern Phase 2 elected, write a file in `jetson/harness/rules/`. Each rule file holds the pattern, the threat or QC property addressed, the citation, and the test verifying the rule fires.
 
-`<NEEDS-JETSON-PORT-VALIDATION>` per rule: Linux path conventions in the pattern match the Jetson filesystem layout. Path separators are forward slash (same as Mac, no change). Absolute paths start at `/` (same). Rules using regex match GNU `grep -E` extended regex semantics (verify any pattern that worked under Mac BSD `grep`).
+Mac wrote 6 deny rules (per `phase-outputs/PHASE-3-NOTES.md`): bash-deny-git-push-force, bash-deny-dangerously-skip-permissions, bash-deny-sudo, bash-deny-rm-rf-root, filesystem-deny-write-secrets, mcp-deny-server-prefix-default. Pattern-syntax caveat from Mac Phase 5 audit (F02): empty-prefix patterns like `Bash(:*--dangerously-skip-permissions*)` do not enforce in Claude Code v2.1.138; the Mac rule was simplified to `Bash(claude --dangerously-skip-permissions:*)`. Per-rule port verifies:
+
+- Linux path conventions in the pattern match the Jetson filesystem layout. Path separators are forward slash (same as Mac, no change). Absolute paths start at `/` (same).
+- `bash-deny-rm-rf-root` Mac patterns target `~/`, `$HOME`, `/Users/`. Jetson equivalents add `/home/`, `/root/` and drop `/Users/`.
+- Rules using regex match GNU `grep -E` extended regex semantics (verify any pattern that worked under Mac BSD `grep`).
 
 Examples ported from Mac patterns:
 
@@ -102,7 +106,7 @@ Before claiming a deny rule pattern matches a specific behavior, write the rule 
 
 Before recording that a security tool integrates cleanly on Jetson, run the tool against known-vulnerable and known-clean fixtures.
 
-`<NEEDS-JETSON-PORT-VALIDATION>` resolution: for each ported Mac pattern, run the equivalent on Jetson and confirm behavior matches. The validation outcome lands in the hook or rule header.
+Marker resolution: for each ported Mac pattern, run the equivalent on Jetson and confirm behavior matches. Mac Phase 3 validated all 15 hook+rule test cases first run (per `phase-outputs/PHASE-3-NOTES.md`); ARM64 Linux baselines its own equivalent set. The validation outcome lands in the hook or rule header.
 </investigate_before_answering>
 
 ## Deliverables

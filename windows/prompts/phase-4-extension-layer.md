@@ -42,7 +42,7 @@ Do not modify `foundation/`, `research/`, `windows/prompts/`, `windows/harness/C
 
 For each capability the model needs that does not already exist as a Claude Code built-in or as an MCP tool, write a skill in `windows/harness/skills/<skill-name>/`. Same discipline as Mac and Jetson.
 
-`<NEEDS-WINDOWS-PORT-VALIDATION>` per skill: any skill ported from Mac or Jetson is verified to function on Windows:
+Mac wrote 2 skills (per `phase-outputs/PHASE-4-NOTES.md`): `mcp-server-pre-trust-audit` (six-check audit framework) and `seed-evaluation` (two-stage methodology). Both are pure markdown with no executable bodies. Mac also adopted 14 skills from `superpowers@claude-plugins-official` v5.1.0 wholesale (corrected from the earlier 17-skill miscount per Phase 5 audit F08). Per-skill port verifies:
 
 - Executable bodies use commands available on Windows (no `pbcopy`, `osascript`, `launchctl`, `apt`, `brew`).
 - Path conventions match Phase 2's canonicalization decision.
@@ -56,7 +56,7 @@ Pre-filter survivors that land in the extension layer include configuration repo
 
 For each subagent role the harness needs, write a markdown file in `windows/harness/agents/`. The Phase 5 Reviewer is the most consequential agent. Other agents: inventory subagent for Phase 1, domain-specific reviewers, test-writer if Phase 2 elected.
 
-`<NEEDS-WINDOWS-PORT-VALIDATION>` per agent: agents ported from Mac or Jetson that invoke specific tools verify those tools are on Windows under expected names and execution contexts.
+Mac wrote 2 agents (per `phase-outputs/PHASE-4-NOTES.md`): `reviewer` (Phase 5 Writer/Reviewer pattern, same-family Opus 4.7 for cache lineage per QC.4a) and `inventory` (read-only discovery scan codifying the Phase 1 role for future re-runs). Agent definitions are mostly platform-agnostic; per-agent port verifies the allowed-tools list resolves to actually-installed tools on Windows under expected names and execution contexts.
 
 ### MCP server allowlist
 
@@ -64,7 +64,7 @@ For each MCP server Phase 1 inventoried and Phase 4 deep-evaluated, decide wheth
 
 Default posture: deny.
 
-`<NEEDS-WINDOWS-PORT-VALIDATION>` per MCP server: Windows x86_64 availability of the server binary or runtime. Go binaries usually portable. Python typically works. npm sometimes hits Windows-specific issues with native modules requiring MSVC build tools.
+Mac's Phase 4 `enabledPlugins` calibrated minimum was `superpowers@claude-plugins-official` v5.1.0 + `mempalace@mempalace` v3.3.2 (per `phase-outputs/PHASE-4-NOTES.md`), with `mcpServers` empty. Mac deferred 13 currently-enabled-but-not-in-harness-reference plugins to Phase 5 daily-driver review. Per-MCP-server port verifies Windows x86_64 availability of the server binary or runtime. Go binaries usually portable. Python typically works. npm sometimes hits Windows-specific issues with native modules requiring MSVC build tools. The context7 `npx -y @upstash/context7-mcp` unpinned-fetch supply-chain concern (per Mac Phase 4 notes) applies cross-platform; pin the version or skip.
 
 ### Deep-evaluate extension-layer seeds
 
@@ -87,7 +87,7 @@ Before allowlisting an MCP server, read the server's tool list and source code w
 
 Before recording an agent definition, verify model selection against QC.4a cache economics.
 
-Before resolving a `<NEEDS-WINDOWS-PORT-VALIDATION>` marker, run the actual verification on Windows. Inference from Mac or Jetson validation is not evidence for Windows.
+Before resolving a marker, run the actual verification on Windows. Mac or Jetson inference is informational, not evidence. Mac Phase 4 deep-eval results land in `mac/evaluations/deep-eval.md` for reference; the Windows equivalent must produce its own three-exercise outcomes per `foundation/03-seed-evaluation-methodology.md`.
 </investigate_before_answering>
 
 ## Deliverables

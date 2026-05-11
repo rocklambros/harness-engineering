@@ -38,7 +38,7 @@ Owned by Claude Code itself. Configured through model selection, effort level, a
 - Effort level: `xhigh` for build phases, `high` for routine work
 - Session mode default: `default` permission mode
 - Compaction posture: continuous, no manual resets unless a model-version change makes the heuristic stale
-- Claude Code Windows availability: `<NEEDS-WINDOWS-PORT-VALIDATION>` (verify the installed Claude Code supports native Windows at the pinned version, including its hook execution model. If Claude Code runs better under WSL2 on Windows than natively at this version, Phase 2 decides the placement)
+- Claude Code Windows availability: Mac validated `v2.1.138` behaviorally on macOS 26.3 Apple Silicon (per `phase-outputs/PHASE-0-DECISIONS.md`). Verify the installed Claude Code supports native Windows at the pinned `v2.1.*` range, including its hook execution model. If Claude Code runs better under WSL2 than natively at this version, Phase 2 decides the placement.
 
 ### 2. Instruction layer
 
@@ -56,7 +56,7 @@ Built-in tools, custom tools, MCP-exposed tools.
 
 Default enabled built-ins: `<TBD-PHASE-0>` (record after `/context` shows the loaded tools on Windows).
 
-Windows x86_64 availability of conditionally enabled tools: `<NEEDS-WINDOWS-PORT-VALIDATION>` (the 35 conditional tools per Claude_Architecture.md §6.2 may have platform-specific availability. Bash-tool variants, shell-sandbox primitives, and POSIX-path-dependent tools are the highest risk for Windows divergence).
+Windows x86_64 availability of conditionally enabled tools: Mac observed 9 always-loaded + 22 deferred under v2.1.138 (per `mac/ARCHITECTURE.md:47-49`), matching the documented `getAllBaseTools()` surface from Claude_Architecture.md §6.2 (up to 54 tools, 35 conditional). The set is feature-flag dependent and Windows-specific tools may diverge most on Bash-tool variants, shell-sandbox primitives, and POSIX-path-dependent tools. Verify the Windows-loaded set matches at the same Claude Code version before treating Mac's deferred-tool reliance as portable.
 
 Custom and MCP tools land in Phase 4.
 
@@ -84,7 +84,7 @@ Hooks enforce. CLAUDE.md advises. Principle 1 holds across platforms.
 
 The largest known platform divergence from Mac. Windows sandbox primitives differ fundamentally.
 
-- Bash sandboxing on Windows: `<NEEDS-WINDOWS-PORT-VALIDATION>` (Claude Code v2.1.88's sandbox implementation on Mac uses macOS-native primitives. Windows-equivalent primitives include AppContainer, Windows Sandbox, and job objects. Phase 0 verifies what's actually supported on the installed Claude Code version on Windows and what the fallback posture looks like.)
+- Bash sandboxing on Windows: Mac verified Claude Code v2.1.138 exposes no sandbox CLI flag (`claude --help` audit per `mac/ARCHITECTURE.md:88`); the macOS `sandbox-exec` primitive is available but the runtime's documented use of it is not visible. Mac's fallback posture: the permission layer (deny rules + hooks + interactive approval) carries the load per Principle 1. Windows-equivalent primitives include AppContainer, Windows Sandbox, and job objects. Verify what's actually supported on the installed Claude Code version on Windows; confirm the permission-layer-carries-load fallback applies until they are.
 - Filesystem isolation: `<TBD-PHASE-0>`
 - Network egress restrictions: `<TBD-PHASE-0>`
 - AppLocker or WDAC integration: `<TBD-PHASE-0>` (whether configured at all; not the harness's responsibility but informs the threat model)
@@ -96,7 +96,7 @@ The largest known platform divergence from Mac. Windows sandbox primitives diffe
 - MCP allowlist: managed in `windows/harness/settings.json` (Phase 4 populates)
 - Default posture: deny all MCP servers not on the allowlist
 - Pre-trust audit habit: same as Mac and Jetson
-- Windows x86_64 availability per MCP server: `<NEEDS-WINDOWS-PORT-VALIDATION>` (each server adopted in Mac Phase 4 is verified to run on Windows before adoption here. Server-side Windows support varies by maintainer; Go binaries usually portable, Python typically works, npm sometimes hits Windows-specific issues with native modules.)
+- Windows x86_64 availability per MCP server: Mac Phase 4 calibrated minimum was `superpowers@claude-plugins-official` v5.1.0 + `mempalace@mempalace` v3.3.2 in `enabledPlugins`, with `mcpServers` empty (per `mac/ARCHITECTURE.md:97-102`). Superpowers ships pure markdown (highly portable). MemPalace is Python with an Anaconda-backed binary on Mac. Each server adopted in Mac Phase 4 is verified to run on Windows before adoption here. Server-side Windows support varies by maintainer; Go binaries usually portable, Python typically works, npm sometimes hits Windows-specific issues with native modules requiring MSVC build tools.
 
 ### 8. Subagent delegation
 
@@ -110,7 +110,7 @@ Same model as Mac and Jetson. Task tool, worktree isolation, cost-vs-cache subag
 
 - Session log location: `<TBD-PHASE-0>` (Claude Code on Windows writes to a path that differs from Mac and Linux; Phase 0 records the actual path)
 - Session log retention: `<TBD-PHASE-0>`
-- Memory tools: `<NEEDS-WINDOWS-PORT-VALIDATION>` (MemPalace Windows support is a Phase 4 deep-eval question)
+- Memory tools: Mac Phase 4 adopted MemPalace v3.3.2 alongside Claude Code's native auto-memory (Q4 enabled). MemPalace runs as `mempalace-mcp` Python backed by `/opt/anaconda3/bin/python3` on Mac (per `mac/evaluations/deep-eval.md`). Windows deep-eval question: whether the Python install path works under Windows + WSL2 routing (per Phase 2 placement), and whether the LaunchAgent daily-maintenance pattern (macOS specific) maps to a Windows Scheduled Task equivalent.
 - Compaction interaction: session log persists across compactions
 
 ## Quality Contract operationalization
@@ -160,7 +160,7 @@ Filled by Phase 0. Re-evaluated on every Claude Code minor-version bump.
 | Node | `<TBD-PHASE-0>` | LTS major release |
 | Python | `<TBD-PHASE-0>` | Minor-version release |
 | Semgrep | `<TBD-PHASE-0>` | Security advisory or major release |
-| MemPalace | `<NEEDS-WINDOWS-PORT-VALIDATION>` | Major release if adopted |
-| Serena | `<NEEDS-WINDOWS-PORT-VALIDATION>` | Major release if adopted |
+| MemPalace | Mac pinned 3.3.2 (Python); Windows native or WSL2 build unverified | Major release if adopted on Windows |
+| Serena | Mac deferred (user-disabled signal); Windows LSP support unverified | Major release if adopted on Windows |
 
 Additional seeds adopted in Phase 3 or Phase 4 land in this table with their pin and trigger.

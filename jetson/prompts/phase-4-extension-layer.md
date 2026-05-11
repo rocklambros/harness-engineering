@@ -42,7 +42,7 @@ Do not modify `foundation/`, `research/`, `jetson/prompts/`, `jetson/harness/CLA
 
 For each capability the model needs that does not already exist as a Claude Code built-in or as an MCP tool, write a skill in `jetson/harness/skills/<skill-name>/`. Same discipline as Mac.
 
-`<NEEDS-JETSON-PORT-VALIDATION>` per skill: any skill ported from Mac is verified to function on ARM64 Linux:
+Mac wrote 2 skills (per `phase-outputs/PHASE-4-NOTES.md`): `mcp-server-pre-trust-audit` (six-check audit framework) and `seed-evaluation` (two-stage methodology). Both are pure markdown with no executable bodies. Mac also adopted 14 skills from `superpowers@claude-plugins-official` v5.1.0 wholesale (corrected from the earlier 17-skill miscount per Phase 5 audit F08). Per-skill port verifies:
 
 - Executable bodies use commands available on Ubuntu (no `pbcopy`, `osascript`, `launchctl`).
 - Path conventions are POSIX-compliant.
@@ -55,7 +55,7 @@ Pre-filter survivors that land in the extension layer include configuration repo
 
 For each subagent role the harness needs, write a markdown file in `jetson/harness/agents/`. The Phase 5 Reviewer is the most consequential agent. Other agents: inventory subagent for Phase 1, domain-specific reviewers if Phase 2 elected, test-writer if Phase 2 elected.
 
-`<NEEDS-JETSON-PORT-VALIDATION>` per agent: agents ported from Mac that invoke specific tools verify those tools are on Jetson under expected names. Agent definitions are mostly platform-agnostic; the verification is checking that the allowed-tools list resolves to actually-installed tools on this platform.
+Mac wrote 2 agents (per `phase-outputs/PHASE-4-NOTES.md`): `reviewer` (Phase 5 Writer/Reviewer pattern, same-family Opus 4.7 for cache lineage per QC.4a) and `inventory` (read-only discovery scan codifying the Phase 1 role for future re-runs). Agent definitions are mostly platform-agnostic; per-agent port verifies the allowed-tools list resolves to actually-installed tools on Jetson under expected names.
 
 ### MCP server allowlist
 
@@ -63,7 +63,7 @@ For each MCP server Phase 1 inventoried and Phase 4 deep-evaluated, decide wheth
 
 Default posture: deny. Allowlisting is a positive decision.
 
-`<NEEDS-JETSON-PORT-VALIDATION>` per MCP server: ARM64 Linux availability of the server binary or runtime. If the server is npm-based and JavaScript, usually portable. If Go binary, verify ARM64 Linux build. If Python, verify ARM64 wheels for dependencies.
+Mac's Phase 4 `enabledPlugins` calibrated minimum was `superpowers@claude-plugins-official` v5.1.0 + `mempalace@mempalace` v3.3.2 (per `phase-outputs/PHASE-4-NOTES.md`), with `mcpServers` empty. Mac deferred 13 currently-enabled-but-not-in-harness-reference plugins to Phase 5 daily-driver review. Per-MCP-server port verifies ARM64 Linux availability of the server binary or runtime. If npm-based JavaScript, usually portable. If Go binary, verify ARM64 Linux build. If Python, verify ARM64 wheels for dependencies. The context7 `npx -y @upstash/context7-mcp` unpinned-fetch supply-chain concern (per Mac Phase 4 notes) applies cross-platform; pin the version or skip.
 
 ### Deep-evaluate extension-layer seeds
 
@@ -86,7 +86,7 @@ Before allowlisting an MCP server, read the server's tool list and source code w
 
 Before recording an agent definition, verify model selection against QC.4a cache economics.
 
-Before resolving a `<NEEDS-JETSON-PORT-VALIDATION>` marker, run the actual verification on Jetson. Inference from Mac validation is not evidence for ARM64 Linux.
+Before resolving a marker, run the actual verification on Jetson. Mac inference is informational, not evidence. Mac Phase 4 deep-eval results land in `mac/evaluations/deep-eval.md` for reference; the ARM64 Linux equivalent must produce its own three-exercise outcomes per `foundation/03-seed-evaluation-methodology.md`.
 </investigate_before_answering>
 
 ## Deliverables

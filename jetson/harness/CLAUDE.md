@@ -50,7 +50,7 @@ Reversibility weights friction. Read freely. Write inside the working directory 
 
 You have CUDA-capable GPU access. The harness does not constrain GPU use by default. If a workload involves loading models, training, or inference, treat the model weights as untrusted code until verified per the same pre-trust audit habit that applies to MCP server source. Loading a model is not a safe operation.
 
-You are running on Linux, not macOS. Filesystem paths, shell defaults, and credential store mechanics differ. `<NEEDS-JETSON-PORT-VALIDATION>`: confirm Claude Code's session log path on ARM64 Linux matches the path recorded in `jetson/ARCHITECTURE.md` before relying on it. Confirm Bash sandboxing behavior on ARM64 Linux before treating Mac-validated patterns as portable.
+You are running on Linux, not macOS. Filesystem paths, shell defaults, and credential store mechanics differ. Mac validated session log path as `~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl` with `/` replaced by `-` in the encoded directory name (per `mac/harness/settings.json:181`); verify the Linux scheme matches before relying on it. Mac verified Claude Code v2.1.138 exposes no sandbox CLI flag and the permission layer (deny rules + hooks + interactive approval) carries the load per Principle 1 (per `mac/ARCHITECTURE.md:88`); verify the same on ARM64 Linux before treating Mac-validated patterns as portable.
 
 ## Things that break
 
@@ -84,6 +84,6 @@ The Jetson harness is scaffolded. Phase 5 produces the polished version after th
 
 Tools available: discovered in Phase 1, inventoried in `phase-outputs/INVENTORY.md`. Permission rules live in `jetson/harness/rules/`. Hook scripts live in `jetson/harness/hooks/`. Skills and agents live in `jetson/harness/skills/` and `jetson/harness/agents/`.
 
-MCP servers are not listed in this file. Tools defer and load on demand via `tool_search`. The full server allowlist lives in `jetson/harness/settings.json` per Phase 4's output. `<NEEDS-JETSON-PORT-VALIDATION>` on per-server ARM64 Linux availability.
+MCP servers are not listed in this file. Tools defer and load on demand via `tool_search`. The full server allowlist lives in `jetson/harness/settings.json` per Phase 4's output. Mac's calibrated minimum was `superpowers@claude-plugins-official` v5.1.0 + `mempalace@mempalace` v3.3.2 in `enabledPlugins`, with `mcpServers` empty (per `mac/ARCHITECTURE.md:97-102`); verify ARM64 Linux builds for both plugins before adopting the same minimum here.
 
 Auto memory: `<TBD-PHASE-2>` (Phase 2 interview produces the decision).

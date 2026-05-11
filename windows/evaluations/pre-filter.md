@@ -24,32 +24,32 @@ The candidates Mac pre-filter survived are pre-populated here with Windows avail
 
 | Candidate | License | Mac | Jetson | Windows | Maintainership | Result | Rationale |
 |---|---|---|---|---|---|---|---|
-| `obra/superpowers` | `<TBD-PHASE-1>` | `<TBD-MAC>` | `<TBD-JETSON>` | `<NEEDS-WINDOWS-PORT-VALIDATION>` | `<TBD>` | `<TBD>` | Pure markdown configuration likely portable; verify any executable bodies |
-| `affaan-m/everything-claude-code` | `<TBD-PHASE-1>` | `<TBD-MAC>` | `<TBD-JETSON>` | `<NEEDS-WINDOWS-PORT-VALIDATION>` | `<TBD>` | `<TBD>` | Configuration reference; verify executable hook scripts on PowerShell |
-| `disler/claude-code-hooks-mastery` | `<TBD-PHASE-1>` | `<TBD-MAC>` | `<TBD-JETSON>` | `<NEEDS-WINDOWS-PORT-VALIDATION>` | `<TBD>` | `<TBD>` | Hook scripts likely bash; native PowerShell ports needed or WSL2 routing |
-| `anthropics/claude-code` skills and plugins | Anthropic | yes | `<TBD-JETSON>` | `<NEEDS-WINDOWS-PORT-VALIDATION>` | active | `<TBD-PHASE-3>` | First-party; verify Windows build matches Mac feature set |
+| `obra/superpowers` | MIT | integrate 5.1.0 (Phase 4 wholesale) | `<TBD-JETSON>` | Mac integrated; pure markdown, trivially portable, verify any executable bodies | active (lastUpdated 2026-05-05) | `<TBD>` | Mac confirmed pure markdown configuration; Windows port reads 14 skill bodies for non-portable commands |
+| `affaan-m/everything-claude-code` | `<TBD-PHASE-1>` | reject (Phase 4 paper) | `<TBD-JETSON>` | Mac rejected; revisit only if a specific skill closes a Windows gap | `<TBD>` | reject (carry Mac rationale) | Configuration reference; Mac's foundation/ + ARCHITECTURE.md cover the equivalent ground |
+| `disler/claude-code-hooks-mastery` | `<TBD-PHASE-1>` | reject (Phase 4 paper) | `<TBD-JETSON>` | Mac rejected; native PowerShell port or WSL2 routing required if Phase 3 surfaces a gap | `<TBD>` | reject (carry Mac rationale) | Mac's 6 Python hooks cover Phase 2 elected threats; Windows port may revisit |
+| `anthropics/claude-code` skills and plugins | Anthropic | integrate (Phase 4 plugins) | `<TBD-JETSON>` | Mac integrated superpowers + mempalace plugins; verify Windows feature parity | active | `<TBD-PHASE-3>` | First-party; verify Windows build matches Mac feature set |
 
 ### Security tools
 
 | Candidate | License | Mac | Jetson | Windows | Maintainership | Result | Rationale |
 |---|---|---|---|---|---|---|---|
-| `semgrep` | LGPL (Pro: BSL) | yes | `<TBD-JETSON>` | `<NEEDS-WINDOWS-PORT-VALIDATION>` | active | `<TBD-PHASE-3>` | Native Windows support recent; older versions required WSL. Verify installed version. |
-| `gitleaks` | MIT | yes | `<TBD-JETSON>` | `<NEEDS-WINDOWS-PORT-VALIDATION>` | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | Go binary; Windows builds available in releases |
-| `trivy` | Apache-2.0 | yes | `<TBD-JETSON>` | `<NEEDS-WINDOWS-PORT-VALIDATION>` | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | Go binary; Windows builds available |
-| `syft` | Apache-2.0 | yes | `<TBD-JETSON>` | `<NEEDS-WINDOWS-PORT-VALIDATION>` | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | Go binary; SBOM generator |
-| `grype` | Apache-2.0 | yes | `<TBD-JETSON>` | `<NEEDS-WINDOWS-PORT-VALIDATION>` | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | Go binary; vulnerability scanner |
-| `cyclonedx-cli` | Apache-2.0 | yes | `<TBD-JETSON>` | `<NEEDS-WINDOWS-PORT-VALIDATION>` | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | `<TBD>` |
-| `sigstore/cosign` | Apache-2.0 | yes | `<TBD-JETSON>` | `<NEEDS-WINDOWS-PORT-VALIDATION>` | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | Go binary; Windows builds available |
-| `osv-scanner` | Apache-2.0 | yes | `<TBD-JETSON>` | `<NEEDS-WINDOWS-PORT-VALIDATION>` | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | Go binary; Windows builds available |
-| `detect-secrets` | Apache-2.0 | yes | yes (Python) | yes (Python) | active | survive | Python; pure Python, Windows compatible via pip. Wired in pre-commit. |
+| `semgrep` | LGPL (Pro: BSL) | integrate 1.162.0 (Phase 3 + pipx install 2026-05-11) | `<TBD-JETSON>` | Mac integrated via pipx; native Windows support added in recent versions, verify installed version + transitive-dep wheels | active | `<TBD-PHASE-3>` | Mac pipx-installed 1.162.0 alongside broken Anaconda install; Windows older versions required WSL |
+| `gitleaks` | MIT | integrate 8.30.0 (Phase 3, pre-commit wired 2026-05-11) | `<TBD-JETSON>` | Mac integrated; Go binary, Windows release builds available, verify exact version | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | Mac validated 440ms clean scan + correct AWS-example-key allowlist |
+| `trivy` | Apache-2.0 | integrate 0.69.0 (Phase 3, complements gitleaks) | `<TBD-JETSON>` | Mac integrated; Go binary, Windows release builds available, verify exact version | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | Mac confirmed 5 secrets detected on realistic fixture |
+| `syft` | Apache-2.0 | deferred post-launch | `<TBD-JETSON>` | Mac deferred; Go binary, Windows release expected, verify exact version | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | Go binary; SBOM generator; QC.1 PS.2.1 candidate |
+| `grype` | Apache-2.0 | not deep-evaluated | `<TBD-JETSON>` | Go binary, Windows release expected; verify if Phase 3 surfaces a Mac-untested gap | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | Go binary; vulnerability scanner |
+| `cyclonedx-cli` | Apache-2.0 | not deep-evaluated | `<TBD-JETSON>` | Verify Windows build; not in Mac's Phase 3 candidate set | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | SBOM tooling; revisit alongside syft adoption |
+| `sigstore/cosign` | Apache-2.0 | not deep-evaluated | `<TBD-JETSON>` | Go binary, Windows release available; verify exact version | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | Go binary; not in Mac's Phase 3 candidate set |
+| `osv-scanner` | Apache-2.0 | not deep-evaluated | `<TBD-JETSON>` | Go binary, Windows release available; verify exact version | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | Go binary; not in Mac's Phase 3 candidate set |
+| `detect-secrets` | Apache-2.0 | reject (Phase 3, superseded by gitleaks) | yes (Python) | Mac rejected in favor of gitleaks; the supersession reasoning is platform-agnostic | active | reject | Mac removed from pre-commit 2026-05-11; gitleaks covers the use case with stronger git-history awareness |
 
 ### Specialized integrations
 
 | Candidate | License | Mac | Jetson | Windows | Maintainership | Result | Rationale |
 |---|---|---|---|---|---|---|---|
-| `cosai-oasis/project-codeguard` | `<TBD-PHASE-1>` | `<TBD>` | `<TBD-JETSON>` | `<NEEDS-WINDOWS-PORT-VALIDATION>` | pre-1.0 | `<TBD-PHASE-4>` | Pre-1.0; Windows availability depends on installer story |
-| MemPalace | `<TBD-PHASE-1>` | yes (installed) | `<TBD-JETSON>` | `<NEEDS-WINDOWS-PORT-VALIDATION>` | `<TBD-PHASE-1>` | `<TBD-PHASE-4>` | Verify Windows build and runtime dependencies |
-| Serena | `<TBD-PHASE-1>` | yes (installed) | `<TBD-JETSON>` | `<NEEDS-WINDOWS-PORT-VALIDATION>` | `<TBD-PHASE-1>` | `<TBD-PHASE-4>` | LSP integration; verify language server Windows support |
+| `cosai-oasis/project-codeguard` | `<TBD-PHASE-1>` | defer (Phase 3, pre-1.0 paper eval) | `<TBD-JETSON>` | Mac deferred; verify Windows installer when 1.0 ships | pre-1.0 | `<TBD-PHASE-4>` | Mac integration shape supports future swap; agentcontrolstandard.ai is a same-class candidate per `phase-outputs/PHASE-3-NOTES.md` |
+| MemPalace | `<TBD-PHASE-1>` | integrate 3.3.2 (Phase 4) | `<TBD-JETSON>` | Mac integrated via Python on Anaconda; verify Windows native vs WSL2 placement (per Phase 2) + Windows Scheduled Task equivalent for daily maintenance | `<TBD-PHASE-1>` | `<TBD-PHASE-4>` | Mac confirmed all 39 mempalace_* MCP tools working; known add_drawer content-corruption bug has deterministic workaround |
+| Serena | `<TBD-PHASE-1>` | defer (Phase 4, user-disabled signal) | `<TBD-JETSON>` | Mac deferred respecting user-disabled signal; Windows LSP integration unverified | `<TBD-PHASE-1>` | `<TBD-PHASE-4>` | Mac's built-in Grep/Glob/Read cover common navigation; revisit on specific use case |
 
 ## Rejected candidates
 

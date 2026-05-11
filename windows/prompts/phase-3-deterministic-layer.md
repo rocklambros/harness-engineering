@@ -46,7 +46,7 @@ For each threat Phase 2 elected to enforce in a hook, write a hook script in `wi
 - Sets `permissionDecision` to `deny` or `ask` when blocking. Never to `allow` to bypass subsequent checks.
 - Returns within a reasonable timeout. WSL2 routing latency is a known cost; Phase 3 measures and confirms within budget.
 
-`<NEEDS-WINDOWS-PORT-VALIDATION>` per hook: any Mac or Jetson hook ported here is verified for:
+Mac wrote 6 Python hooks uniformly (per `phase-outputs/PHASE-3-NOTES.md`), choosing Python over shell because every hook parses JSON on stdin. If Windows follows the same Python uniformity, the verification narrows to Python runtime parity (interpreter path, `json` stdlib, native vs WSL2 placement per Phase 2). If Windows elects PowerShell or WSL2-bash, the per-hook port verifies:
 
 - PowerShell version compatibility (5.1 vs 7+) if PowerShell is the chosen language.
 - Path canonicalization. Forward slash vs backslash applied consistently per Phase 2's decision.
@@ -68,7 +68,11 @@ Optional hooks Phase 2 may have elected: same as Mac and Jetson (PreCompact pres
 
 For each blanket-deny pattern Phase 2 elected, write a file in `windows/harness/rules/`. Each rule file holds the pattern, the threat or QC property addressed, the citation, and the test.
 
-`<NEEDS-WINDOWS-PORT-VALIDATION>` per rule: Windows path conventions in the pattern match the Phase 2 canonicalization decision. Forward slash where accepted, backslash where required, consistent within a rule. Rules using regex match the regex engine the rule will be evaluated against (PowerShell's .NET regex differs from POSIX ERE on edges).
+Mac wrote 6 deny rules (per `phase-outputs/PHASE-3-NOTES.md`): bash-deny-git-push-force, bash-deny-dangerously-skip-permissions, bash-deny-sudo, bash-deny-rm-rf-root, filesystem-deny-write-secrets, mcp-deny-server-prefix-default. Pattern-syntax caveat from Mac Phase 5 audit (F02): empty-prefix patterns like `Bash(:*--dangerously-skip-permissions*)` do not enforce in Claude Code v2.1.138; Mac simplified to `Bash(claude --dangerously-skip-permissions:*)`. Per-rule port verifies:
+
+- Windows path conventions in the pattern match the Phase 2 canonicalization decision. Forward slash where accepted, backslash where required, consistent within a rule.
+- `bash-deny-rm-rf-root` Mac patterns target `~/`, `$HOME`, `/Users/`. Windows equivalents target `%USERPROFILE%`, `C:\Users\`, and the WSL2-distribution roots if WSL2 is in play. `bash-deny-sudo` has no Windows equivalent (UAC elevation differs structurally); the deny rule may swap to a `runas` or `Start-Process -Verb RunAs` pattern.
+- Rules using regex match the regex engine the rule will be evaluated against (PowerShell's .NET regex differs from POSIX ERE on edges).
 
 Examples ported from Mac and Jetson patterns:
 
@@ -104,7 +108,7 @@ Before claiming a deny rule pattern matches a specific behavior, write the rule 
 
 Before recording that a security tool integrates cleanly on Windows, run the tool against known-vulnerable and known-clean fixtures.
 
-`<NEEDS-WINDOWS-PORT-VALIDATION>` resolution: for each ported pattern, run the equivalent on Windows and confirm behavior matches. The validation outcome lands in the hook or rule header.
+Marker resolution: for each ported pattern, run the equivalent on Windows and confirm behavior matches. Mac Phase 3 validated all 15 hook+rule test cases first run (per `phase-outputs/PHASE-3-NOTES.md`); Windows baselines its own equivalent set. The validation outcome lands in the hook or rule header.
 </investigate_before_answering>
 
 ## Deliverables

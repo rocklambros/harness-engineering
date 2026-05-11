@@ -56,7 +56,7 @@ Line endings: CRLF is the Windows default. The repository's `.gitattributes` (wh
 
 WSL2 boundary: if WSL2 is in use, the WSL2 instance is a separate process and filesystem namespace from native Windows. The boundary is real but porous; the WSL2 filesystem is reachable from native Windows by default at `\\wsl$\<distro>\`. Treat any file copied from WSL2 to native Windows (or vice versa) as if its origin was untrusted until the file's authorship is verified.
 
-`<NEEDS-WINDOWS-PORT-VALIDATION>`: confirm Claude Code's session log path on Windows matches the path recorded in `windows/ARCHITECTURE.md` before relying on it. Confirm sandbox behavior on Windows before treating Mac-validated patterns as portable.
+Mac validated session log path as `~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl` with `/` replaced by `-` in the encoded directory name (per `mac/harness/settings.json:181`); the Windows equivalent likely lives at `%USERPROFILE%\.claude\projects\<encoded-cwd>\<session-uuid>.jsonl` but path-encoding semantics on Windows (backslash escaping, drive letter handling) need verification before relying on the format. Mac verified Claude Code v2.1.138 exposes no sandbox CLI flag and the permission layer (deny rules + hooks + interactive approval) carries the load per Principle 1 (per `mac/ARCHITECTURE.md:88`); verify the same on Windows (or under WSL2 routing if Phase 2 elected that placement) before treating Mac-validated patterns as portable.
 
 ## Things that break
 
@@ -92,6 +92,6 @@ The Windows harness is scaffolded. Phase 5 produces the polished version after t
 
 Tools available: discovered in Phase 1, inventoried in `phase-outputs/INVENTORY.md`. Permission rules live in `windows/harness/rules/`. Hook scripts live in `windows/harness/hooks/`. Skills and agents live in `windows/harness/skills/` and `windows/harness/agents/`.
 
-MCP servers are not listed in this file. Tools defer and load on demand via `tool_search`. The full server allowlist lives in `windows/harness/settings.json` per Phase 4's output. `<NEEDS-WINDOWS-PORT-VALIDATION>` on per-server Windows availability.
+MCP servers are not listed in this file. Tools defer and load on demand via `tool_search`. The full server allowlist lives in `windows/harness/settings.json` per Phase 4's output. Mac's calibrated minimum was `superpowers@claude-plugins-official` v5.1.0 + `mempalace@mempalace` v3.3.2 in `enabledPlugins` (per `mac/ARCHITECTURE.md:97-102`); verify Windows x86_64 builds for both plugins before adopting the same minimum here. npm-based servers may hit MSVC-build-tool requirements for native modules on Windows.
 
 Auto memory: `<TBD-PHASE-2>` (Phase 2 interview produces the decision).
