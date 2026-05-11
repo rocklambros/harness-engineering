@@ -1,0 +1,109 @@
+{
+  "_documentation": [
+    "Mac harness Claude Code settings template.",
+    "This template is the structural skeleton. Phase 3 fills the permission rules,",
+    "Phase 4 fills the MCP server allowlist, and Phase 0 fills the version pin and",
+    "model defaults. The file's final form lives in this directory after Phase 5;",
+    "during the build it gets copied to the active Claude Code config path under",
+    "the path specified in ARCHITECTURE.md.",
+    "",
+    "The schema here reflects Claude Code v2.1.x. Phase 0 verifies against the",
+    "actual installed version before any setting is treated as authoritative.",
+    "QC.5 re-evaluates this file on every minor-version bump.",
+    "",
+    "JSON does not support comments. Documentation lives in _documentation keys",
+    "that Claude Code ignores. Phase 5 verifies the file parses as strict JSON",
+    "after the template values are filled."
+  ],
+
+  "_claude_code_version_pin": "<TBD-PHASE-0>",
+
+  "permissions": {
+    "_documentation": [
+      "Deny rules are evaluated first per Claude_Architecture.md §5.2.",
+      "A broad deny always wins over a narrow allow.",
+      "Server-prefix rules (mcp__server) strip whole tool families from the",
+      "model's view at tool pool assembly time, before any invocation.",
+      "Phase 3 populates deny rules from mac/harness/rules/.",
+      "Phase 4 adds MCP server allowlist entries."
+    ],
+    "defaultMode": "default",
+    "allow": [],
+    "deny": [
+      "<TBD-PHASE-3>"
+    ],
+    "additionalDirectories": [
+      "<TBD-PHASE-0>"
+    ]
+  },
+
+  "hooks": {
+    "_documentation": [
+      "Hook registration. Five tool-authorization events plus session lifecycle",
+      "events. See Claude_Architecture.md §5.3 and §6 for the full list.",
+      "Hook scripts live in mac/harness/hooks/ and are populated by Phase 3.",
+      "Each hook script is executable, version-controlled, and shellcheck-clean.",
+      "Phase 3 writes the actual hook configuration into this block."
+    ],
+    "PreToolUse": "<TBD-PHASE-3>",
+    "PostToolUse": "<TBD-PHASE-3>",
+    "PostToolUseFailure": "<TBD-PHASE-3>",
+    "PermissionRequest": "<TBD-PHASE-3>",
+    "PermissionDenied": "<TBD-PHASE-3>",
+    "SessionStart": "<TBD-PHASE-3>",
+    "UserPromptSubmit": "<TBD-PHASE-3>",
+    "Stop": "<TBD-PHASE-3>",
+    "SubagentStop": "<TBD-PHASE-3>",
+    "PreCompact": "<TBD-PHASE-3>"
+  },
+
+  "mcpServers": {
+    "_documentation": [
+      "MCP server allowlist. Each entry is a permission grant.",
+      "Defaults to empty. Phase 4 adds entries with rationale recorded in",
+      "the commit message and in mac/evaluations/deep-eval.md.",
+      "Server-level deny rules in permissions.deny strip tool families",
+      "before the model sees them."
+    ]
+  },
+
+  "model": {
+    "_documentation": [
+      "Default model for the main session. Subagent model selection happens",
+      "per-Task invocation and affects cache economy per QC.4a."
+    ],
+    "default": "<TBD-PHASE-0>",
+    "subagentDefault": "<TBD-PHASE-0>"
+  },
+
+  "sandbox": {
+    "_documentation": [
+      "Shell sandboxing per Claude_Architecture.md §5.4.",
+      "Independent of the permission layer. Operates on filesystem and network",
+      "isolation. Phase 0 enables on Mac and verifies the default behavior."
+    ],
+    "enabled": "<TBD-PHASE-0>",
+    "excludePatterns": []
+  },
+
+  "cache_control": {
+    "_documentation": [
+      "Cache discipline per QC.4a. Applies to direct API/SDK use, not to",
+      "Claude Code's built-in caching. The 1h TTL is required for cache",
+      "reuse beyond 5 minutes; default reverted to 5m in March 2026.",
+      "Telemetry-off also drops 1h TTL silently."
+    ],
+    "ttl": "1h",
+    "telemetry": true
+  },
+
+  "logging": {
+    "_documentation": [
+      "Session log path and retention. The session is the only durable",
+      "component of the Claude Code execution model (SAGE §4.10).",
+      "Phase 0 records the path and retention policy."
+    ],
+    "sessionLogPath": "<TBD-PHASE-0>",
+    "retentionDays": "<TBD-PHASE-0>"
+  }
+}
