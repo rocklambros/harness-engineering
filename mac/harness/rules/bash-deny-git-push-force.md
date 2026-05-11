@@ -23,15 +23,19 @@ Force-push has narrow legitimate use (rebasing a feature branch before merge). T
 ## Test
 
 Positive (deny fires):
+
 ```
 echo '{"tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}'
 ```
+
 Claude Code's deny rule evaluation should match `Bash(git push --force:*)` and return a deny decision.
 
 Negative (deny does not fire):
+
 ```
 echo '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
 ```
+
 Plain `git push` is not denied.
 
 ## Provenance

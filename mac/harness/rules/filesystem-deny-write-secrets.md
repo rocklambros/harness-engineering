@@ -34,6 +34,7 @@ Claude Code v2.1.x's deny-rule glob support for Write/Edit path matching is docu
 ## Test
 
 Positive (these should be denied if the runtime honors the glob):
+
 ```
 echo '{"tool_name":"Write","tool_input":{"file_path":"./.env"}}'
 echo '{"tool_name":"Write","tool_input":{"file_path":"./.env.local"}}'
@@ -42,6 +43,7 @@ echo '{"tool_name":"Write","tool_input":{"file_path":"./credentials.json"}}'
 ```
 
 Negative:
+
 ```
 echo '{"tool_name":"Write","tool_input":{"file_path":"./README.md"}}'
 echo '{"tool_name":"Write","tool_input":{"file_path":"./src/main.py"}}'

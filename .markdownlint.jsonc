@@ -1,0 +1,33 @@
+{
+  // Markdownlint config for harness-engineering.
+  //
+  // MD013 (line-length) is disabled. The project's writing rules call for
+  // paragraph-style prose with intentional sentence-level wrapping rather
+  // than column-bounded hard wrapping. The 80-column convention predates
+  // word-wrap-capable editors and works against the project's editorial
+  // voice.
+  //
+  // MD033 (no-inline-html) is disabled. Phase prompts use angle-bracket
+  // section tags (<role>, <effort>, <mode>, <thinking>, <context_budget>,
+  // <parallel_tool_calls>, <scope>) as deliberate prompt-header markers,
+  // not as inline HTML. Same convention appears in some rule and agent
+  // definitions.
+  //
+  // MD029 (ol-prefix) is disabled. research/ reference material uses
+  // numbering styles that the linter wants enforced as strict 1/2/3.
+  // The variation is intentional in those documents.
+  //
+  // MD040 (fenced-code-language) is disabled. Many code blocks across
+  // prompts, deny rules, and evaluation worksheets are documentation
+  // snippets where no specific language applies (mixed shell + output,
+  // schema sketches, example outputs). Adding `text` for every one would
+  // be busywork without clarifying anything.
+  //
+  // Other markdownlint rules stay on so structural mistakes (broken links,
+  // malformed tables, duplicate headings) still get caught.
+  "default": true,
+  "MD013": false,
+  "MD033": false,
+  "MD029": false,
+  "MD040": false
+}

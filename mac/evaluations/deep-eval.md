@@ -111,7 +111,9 @@ Edge case: A clean git repo with no secrets returned "no leaks found" with the s
 
 No-op cost: ~58ms per scan on a small repo. Cache footprint zero (binary at /opt/homebrew/bin/gitleaks, no tool-pool slot). Pre-commit invocation adds the same ~58ms per run.
 
-Rationale: gitleaks closes the QC.1 PW.5.1 secret-scan-in-pre-commit gap with the strongest git-history awareness in the candidate set. Detect-secrets was rejected in favor of gitleaks because gitleaks finds the same realistic-shape secrets with stronger commit-history coverage and is already installed (no QC.1 PS.2.1 install-and-pin cost). The pre-commit wiring change is a Phase 5 deliverable.
+Rationale: gitleaks closes the QC.1 PW.5.1 secret-scan-in-pre-commit gap with the strongest git-history awareness in the candidate set. Detect-secrets was rejected in favor of gitleaks because gitleaks finds the same realistic-shape secrets with stronger commit-history coverage and is already installed (no QC.1 PS.2.1 install-and-pin cost).
+
+Status update 2026-05-11: pre-commit wired. `.pre-commit-config.yaml` swapped `Yelp/detect-secrets` for `gitleaks/gitleaks v8.30.0`. Full-repo `pre-commit run` shows gitleaks Passed in ~440ms across 12 commits with no leaks found. Pre-commit git hooks installed at `.git/hooks/pre-commit`.
 
 Drift trigger: Security advisory, or major release (v9)
 Version pin: 8.30.0
@@ -146,13 +148,16 @@ Edge case: Not run (the broken state blocks the nominal exercise).
 No-op cost: Currently the broken binary consumes a PATH entry but no other resource. If fixed, semgrep is the established Python/JS SAST baseline and would close QC.1 PW.5.1 SAST gate alongside gitleaks/trivy.
 
 Constraints:
+
 - Install a clean semgrep in a separate venv (pipx install semgrep) rather than repairing the Anaconda install. The Anaconda environment is shared with mempalace, academia_mcp, and other tools; ripple effects of dependency repair are not in scope for this phase.
 - Phase 5 wires semgrep into pre-commit alongside gitleaks. SAST findings above HIGH severity block the commit; lower findings warn.
 
 Rationale: semgrep is the SAST gate that QC.1 PW.5.1 names. The broken Anaconda install does not falsify the tool; a clean install resolves the issue and the historical signal (Anthropic's own Claude Code repo uses semgrep) supports the integration. The constraint is the install path, not the tool choice.
 
-Drift trigger: Security advisory, or quarterly review
-Version pin: deferred to Phase 5 install (latest stable at install time, then pinned)
+Status update 2026-05-11: clean install landed via pipx (`pipx install semgrep`) producing `/Users/klambros/.local/pipx/venvs/semgrep/bin/semgrep` v1.162.0 in an isolated Python 3.12.2 venv. The Anaconda install at `/opt/anaconda3/bin/semgrep` remains broken on Python 3.13.9 and is now shadowed by the pipx install. `.pre-commit-config.yaml` pins `semgrep/semgrep v1.162.0` for pre-commit-managed invocation; that path avoids the PATH-ordering hazard where Anaconda's broken `pysemgrep` shadows the pipx one. Full-repo `pre-commit run` shows semgrep Passed with no SAST findings.
+
+Drift trigger: Security advisory, or major release (v2)
+Version pin: 1.162.0 (pipx binary and pre-commit hook)
 
 ### detect-secrets
 
@@ -166,9 +171,11 @@ Edge case: Not run.
 
 No-op cost: Zero (not installed).
 
-Rationale: gitleaks covers detect-secrets's use case with stronger coverage in this fixture set (3 detections vs the expected detect-secrets baseline) and is already installed. Adding detect-secrets means maintaining two tools that solve the same problem. Phase 5 updates `.pre-commit-config.yaml` to use gitleaks in place of detect-secrets.
+Rationale: gitleaks covers detect-secrets's use case with stronger coverage in this fixture set (3 detections vs the expected detect-secrets baseline) and is already installed. Adding detect-secrets means maintaining two tools that solve the same problem.
 
-Rejected: detect-secrets — superseded by gitleaks + trivy for secret-scanning coverage. Pre-commit wiring change is Phase 5 scope.
+Status update 2026-05-11: `.pre-commit-config.yaml` no longer references `Yelp/detect-secrets`. No `.secrets.baseline` file existed on this repo so no orphan to clean up.
+
+Rejected: detect-secrets, superseded by gitleaks + trivy for secret-scanning coverage.
 
 ### cosai-oasis/project-codeguard
 

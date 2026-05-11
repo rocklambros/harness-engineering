@@ -25,6 +25,7 @@ Scoped `rm -rf /path/inside/cwd/` is not blocked by these patterns. The `PreTool
 ## Test
 
 Positive:
+
 ```
 echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}'
 echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf ~/"}}'
@@ -32,6 +33,7 @@ echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf $HOME"}}'
 ```
 
 Negative:
+
 ```
 echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf node_modules"}}'
 echo '{"tool_name":"Bash","tool_input":{"command":"rm /tmp/log.txt"}}'

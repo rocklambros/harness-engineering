@@ -38,7 +38,7 @@ Three CLAUDE.md files participate in the cached prefix.
 - `mac/harness/CLAUDE.md` (operational, governs daily Claude Code sessions; 81 lines after Phase 5 polish)
 - `~/.claude/CLAUDE.md` participates automatically in every session via Claude Code's hierarchy walk. Phase 1 inventory measured ~17 lines plus a SuperClaude framework @import chain totaling ~800-900 lines. Phase 2 Q3 elected to rebuild the user-level config lean (no transitive @import chain or a deliberate small one with explicit budget); the rebuild is a post-Phase-5 operational step.
 
-Project-hierarchy line total stays under 400 per QC.4b. The drift check in `scripts/drift-check.sh` enforces the project-scoped cap. Phase 2 Q10 elected to widen the script to cover the user-level @import chain too; the widening is a post-Phase-5 operational step against the rebuilt user config.
+Project-hierarchy line total stays under 400 per QC.4b. The drift check in `scripts/drift-check.sh` enforces the cap. Phase 2 Q10's widening of the check to include the user-level `~/.claude/CLAUDE.md` plus its transitive `@import` chain landed 2026-05-11 (commit `920d5e7`). The widened check currently reports FAIL because the legacy SuperClaude framework chain totals 973 lines; the Q3 `~/.claude/` rebuild trims the chain and clears the gate.
 
 ### 3. Tool pool
 
@@ -136,11 +136,11 @@ Adopted from the `superpowers@claude-plugins-official` plugin: 14 skills (brains
 
 | QC | Mac implementation |
 |---|---|
-| QC.1 Security | Homebrew pins (post-launch operational step); SBOM via `syft` (deferred, post-launch); secret scan via `gitleaks` v8.30.0 (pre-commit rewire from `detect-secrets` is a post-Phase-5 operational step); SAST via `semgrep` (pipx install in separate venv is a post-Phase-5 operational step; the Anaconda install remains broken per Phase 3 deep-eval). |
+| QC.1 Security | Homebrew pins (post-launch operational step); SBOM via `syft` (deferred, post-launch); secret scan via `gitleaks` v8.30.0 wired in pre-commit 2026-05-11 (replaced `detect-secrets`); SAST via `semgrep` v1.162.0 installed via pipx and wired in pre-commit 2026-05-11 (the broken Anaconda install is shadowed by the pinned pre-commit-managed version, not removed); shell linting via `shellcheck` v0.11.0 wired in pre-commit. |
 | QC.2 Tight code | Reviewer subagent in Phase 5 audits scope. No new abstractions, no new test scaffolding without explicit decision recorded in the phase output or commit message. |
 | QC.3 Comments | Comment the why. Hook scripts and skill bodies carry rationale headers. |
 | QC.4a Cache (API/SDK) | Direct API/SDK use carries explicit `"ttl": "1h"` on cache_control. Telemetry on. Documented in `mac/harness/settings.json`. |
-| QC.4b Cache (Claude Code) | CLAUDE.md hierarchy under 400 lines total (project-scoped drift-check enforces, currently 188-line worst case). Phase 2 Q10 widens drift-check to user-level @import chain as a post-Phase-5 operational step. `<system-reminder>` blocks carry dynamic content. |
+| QC.4b Cache (Claude Code) | CLAUDE.md hierarchy under 400 lines total. Drift-check covers project hierarchy plus user-level `@import` chain (Q10 widening landed 2026-05-11). Currently FAILs at 1161 lines worst case until the Q3 `~/.claude/` rebuild trims the legacy SuperClaude framework chain. `<system-reminder>` blocks carry dynamic content. |
 | QC.5 Versioning | Claude Code pinned to `v2.1.*` minor-version range (currently 2.1.138). Re-evaluation trigger: minor bump (v2.2.x). |
 
 ## Threat model adaptations for Mac
@@ -164,7 +164,9 @@ The threats in `foundation/01-threat-model.md` apply unchanged. Mac-specific not
 - Phase 4 (extension layer): complete 2026-05-11. 2 skills, 2 agents, `enabledPlugins` calibrated minimum, 6-candidate deep-eval.
 - Phase 5 (wire and document): complete 2026-05-11. Polished documentation, Reviewer audit pass.
 
-Post-Phase-5 operational steps not in the build commits: rebuild `~/.claude/` per Q3, bulk-acknowledge tool for the 44 in-repo `.claude/` directories Phase 1 surveyed, pre-commit wire from `detect-secrets` to `gitleaks`, `semgrep` clean install via pipx, widen `scripts/drift-check.sh` per Q10, Hetzner Cloud token env-var indirection, audit the 13 daily-driver plugins for the rebuilt config.
+Post-Phase-5 operational steps landed in their own commits: drift-check widening per Q10 (commit `920d5e7`); pre-commit rewire from `detect-secrets` to `gitleaks` plus `semgrep` clean install via pipx plus `shellcheck` install for direct verification (one combined commit; pre-commit git hooks installed at the same time).
+
+Remaining post-Phase-5 operational steps: rebuild `~/.claude/` per Q3, bulk-acknowledge tool for the 44 in-repo `.claude/` directories Phase 1 surveyed, Hetzner Cloud token env-var indirection, audit the 13 daily-driver plugins for the rebuilt config.
 
 ## Version pins
 
@@ -177,11 +179,12 @@ Re-evaluated on every Claude Code minor-version bump.
 | Node | v24.10.0 | Node LTS major (v26 LTS) |
 | Python | 3.13.9 | Python minor release (3.14 / 3.15) |
 | Homebrew | 5.1.10 | Quarterly review (next: 2026-08-10) |
-| gitleaks | 8.30.0 | Security advisory, or major release (v9) |
+| gitleaks | 8.30.0 (binary + pre-commit hook) | Security advisory, or major release (v9) |
 | trivy | 0.69.0 | Security advisory, or major release (v1.x) |
-| semgrep | deferred (Anaconda install broken; post-Phase-5 pipx install) | Install completion, then security advisory or major release |
+| semgrep | 1.162.0 (pipx; pre-commit hook pins the same version) | Security advisory, or major release (v2) |
+| shellcheck | 0.11.0 (binary; pre-commit shellcheck-py wraps v0.10.0.1) | Security advisory, or major release (v1) |
 | superpowers plugin | 5.1.0 | Plugin lastUpdated drift past 90 days, or upstream major (6.0.x) |
 | MemPalace plugin | 3.3.2 | Security advisory, major release (4.0.x), or add_drawer content-corruption bug unfixed 90 days |
 | Serena | deferred (user-disabled in current `~/.claude/settings.json`; revisit on specific use case) | Set when adopted |
-| detect-secrets | rejected (superseded by gitleaks) | Reject persists until gitleaks coverage gap surfaces |
+| detect-secrets | removed 2026-05-11 (superseded by gitleaks in pre-commit) | Re-evaluation only if gitleaks coverage gap surfaces |
 | cosai-oasis/project-codeguard | deferred (pre-1.0, not installed) | Codeguard 1.0 release, or agentcontrolstandard.ai ship |

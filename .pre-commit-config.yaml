@@ -10,6 +10,14 @@
 #
 # Run on every commit. To run manually: `pre-commit run --all-files`.
 
+# Top-level exclude. research/ is reference material under the project's
+# do-not-modify rule (project root CLAUDE.md). Excluding here keeps every
+# hook (including auto-fixers) from touching it.
+exclude: |
+  (?x)^(
+    research/.*
+  )$
+
 repos:
   # Repository hygiene baseline.
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -37,28 +45,31 @@ repos:
         args: ['--severity=warning']
 
   # Markdown linting. Keeps the prose consistent across foundation
-  # documents and platform sections.
+  # documents and platform sections. Rule relaxations live in
+  # .markdownlint.jsonc. research/ exclusion handled at top level.
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.14.0
     hooks:
       - id: markdownlint-cli2
         args: ['--fix']
 
-  # Secret scanning. QC.1 / NIST PS.1.1.
-  # The baseline file (.secrets.baseline) suppresses known false positives
-  # and gets generated with: `detect-secrets scan > .secrets.baseline`.
-  - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.5.0
+  # Secret scanning. QC.1 / NIST PS.1.1. gitleaks selected over detect-secrets
+  # per Phase 3 deep-eval (stronger git-history coverage, canonical AWS example
+  # keys correctly allowlisted, clean 440ms scan on this repo). Configuration
+  # lives at .gitleaks.toml if tuning is needed; defaults pass on this repo.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
     hooks:
-      - id: detect-secrets
-        args:
-          - '--baseline'
-          - '.secrets.baseline'
-        exclude: |
-          (?x)^(
-            research/.*\.md|
-            \.secrets\.baseline
-          )$
+      - id: gitleaks
+
+  # SAST gate. QC.1 / NIST PW.5.1. semgrep installed via pipx at v1.162.0
+  # post-Phase-5; the broken Anaconda install at /opt/anaconda3/bin/semgrep
+  # is shadowed by this pinned pre-commit-managed version.
+  - repo: https://github.com/semgrep/semgrep
+    rev: v1.162.0
+    hooks:
+      - id: semgrep
+        args: ['--config', 'auto', '--error', '--quiet']
 
   # Project-local drift check. Enforces QC.4b context-window discipline:
   # CLAUDE.md hierarchy under 400 lines, no timestamps or per-run state

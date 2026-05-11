@@ -31,6 +31,7 @@ Apply only to:
 - `phase-outputs/PHASE-5-CONTEXT.md` (writes)
 
 May modify (only if Reviewer surfaces a finding requiring it):
+
 - Files in `jetson/harness/hooks/`, `jetson/harness/rules/`, `jetson/harness/skills/`, `jetson/harness/agents/`, or `jetson/harness/settings.json`. Each modification records the finding ID and rationale.
 
 Do not modify `foundation/`, `research/`, or `jetson/prompts/`. Do not modify `CHECKPOINT.md` or `CONVERSATION_HISTORY.md`.

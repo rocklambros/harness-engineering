@@ -29,6 +29,7 @@ Apply only to:
 - `phase-outputs/PHASE-5-CONTEXT.md` (writes)
 
 May modify, only if the Reviewer surfaces a finding the audit requires:
+
 - Files in `mac/harness/hooks/`, `mac/harness/rules/`, `mac/harness/skills/`, `mac/harness/agents/`, or `mac/harness/settings.json`. Each modification records the finding ID from `PHASE-5-AUDIT.md` and the change rationale.
 
 Do not modify `foundation/`, `research/`, or `mac/prompts/`. Do not modify `CHECKPOINT.md` or `CONVERSATION_HISTORY.md`.

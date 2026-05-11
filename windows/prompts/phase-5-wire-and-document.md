@@ -31,6 +31,7 @@ Apply only to:
 - `phase-outputs/PHASE-5-CONTEXT.md` (writes)
 
 May modify (only if Reviewer surfaces a finding requiring it):
+
 - Files in `windows/harness/hooks/`, `windows/harness/rules/`, `windows/harness/skills/`, `windows/harness/agents/`, or `windows/harness/settings.json`. Each modification records the finding ID and rationale.
 
 Do not modify `foundation/`, `research/`, or `windows/prompts/`. Do not modify `CHECKPOINT.md` or `CONVERSATION_HISTORY.md`.

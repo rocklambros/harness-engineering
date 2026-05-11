@@ -25,9 +25,11 @@ Phase 4 may add per-server deny rules for specific tools within an allowlisted s
 ## Test
 
 Positive (an unlisted MCP server's tools never reach the model):
+
 - Verified via `mcpServers: {}` in `mac/harness/settings.json` plus Phase 4's allowlist additions. The verification is observational at runtime: an MCP tool whose server is not in `mcpServers` does not appear in `/context` tool listings.
 
 Negative (allowlisted servers reach the model):
+
 - Phase 4's allowlist entries with their explicit `command` and `args` define the surface. Each addition is a recorded permission grant per `foundation/03-seed-evaluation-methodology.md`.
 
 ## Provenance

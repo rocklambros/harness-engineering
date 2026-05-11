@@ -23,17 +23,20 @@ The whole point of bypass mode is to skip prompts. Asking via deny-fires-ask-dia
 ## Test
 
 Positive (matches the single pattern):
+
 ```
 echo '{"tool_name":"Bash","tool_input":{"command":"claude --dangerously-skip-permissions"}}'
 echo '{"tool_name":"Bash","tool_input":{"command":"claude --dangerously-skip-permissions --resume"}}'
 ```
 
 Not matched (residual risk, falls to auto-mode classifier):
+
 ```
 echo '{"tool_name":"Bash","tool_input":{"command":"env DEBUG=1 claude --dangerously-skip-permissions"}}'
 ```
 
 Negative (does not fire):
+
 ```
 echo '{"tool_name":"Bash","tool_input":{"command":"claude --help"}}'
 ```

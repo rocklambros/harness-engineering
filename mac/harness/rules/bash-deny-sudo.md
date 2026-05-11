@@ -21,12 +21,14 @@ The legitimate-sudo case in a Claude Code session is rare enough that a deny + R
 ## Test
 
 Positive:
+
 ```
 echo '{"tool_name":"Bash","tool_input":{"command":"sudo apt-get install foo"}}'
 echo '{"tool_name":"Bash","tool_input":{"command":"sudo -E env"}}'
 ```
 
 Negative:
+
 ```
 echo '{"tool_name":"Bash","tool_input":{"command":"echo not_sudo_just_a_string"}}'
 ```

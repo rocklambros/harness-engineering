@@ -193,8 +193,10 @@ declare -a OTHER_FILES=()
 for f in "${CLAUDE_FILES[@]}"; do
     case "$f" in
         ./CLAUDE.md) ;;
+        # ./*/CLAUDE.md covers both platform-level (./mac/CLAUDE.md) and
+        # harness-level (./mac/harness/CLAUDE.md) because case-statement
+        # globs match across slashes; no additional pattern needed.
         ./*/CLAUDE.md) ;;
-        ./*/harness/CLAUDE.md) ;;
         *) OTHER_FILES+=("$f") ;;
     esac
 done
