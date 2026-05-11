@@ -38,12 +38,16 @@ import sys
 
 # Pattern, label.
 UNPINNED_PATTERNS = [
-    (re.compile(r"\bnpx\s+-y\b"), "npx -y fetches latest unpinned package"),
-    (re.compile(r"\buvx\s+--from\s+git\+\S+(?:\s|$)(?!.*@[0-9a-f]{7,})"),
-     "uvx --from git+ URL without explicit @<ref> pin"),
     (re.compile(r"@latest\b"), "package@latest tag"),
     (re.compile(r"\bnpm\s+install\s+\S+@latest"), "npm install ...@latest"),
 ]
+
+# `npx -y <pkg>` is unpinned unless <pkg> carries an @<version> suffix.
+NPX_UNPINNED = re.compile(r"\bnpx\s+-y\s+(?:--?\S+\s+)*(\S+)")
+
+# `uvx --from git+<url>` is unpinned unless the URL carries an @<ref> after the
+# git+ scheme prefix.
+UVX_GIT_URL = re.compile(r"\buvx\s+--from\s+(git\+\S+)")
 
 # curl/wget piped to a shell (sh, bash, zsh). Match either ordering: pipe at the
 # end or pipe inside a one-liner with redirection.
@@ -62,12 +66,42 @@ def is_unpinned_pip(cmd: str) -> bool:
     return not any(tok in cmd for tok in PIP_PINNED_TOKENS)
 
 
+def is_unpinned_npx(cmd: str) -> bool:
+    # npx -y is the supply-chain risk shape. A pinned package@<version> after
+    # -y carries an explicit version and passes; bare package names do not.
+    m = NPX_UNPINNED.search(cmd)
+    if not m:
+        return False
+    pkg = m.group(1)
+    # Strip leading @scope if present (npm scoped names): @scope/name vs name.
+    # @scope counts only when followed by /; otherwise treat as a version marker.
+    if pkg.startswith("@") and "/" in pkg:
+        # Scoped name @scope/name[@version]
+        after_slash = pkg.split("/", 1)[1]
+        return "@" not in after_slash
+    return "@" not in pkg
+
+
+def is_unpinned_uvx_git(cmd: str) -> bool:
+    m = UVX_GIT_URL.search(cmd)
+    if not m:
+        return False
+    url = m.group(1)
+    # Strip the git+ scheme prefix, then look for @<ref> in the remainder.
+    # A user@host segment in https URLs is rare; treat any @ after git+ as a ref.
+    return "@" not in url[4:]
+
+
 def find_violation(cmd: str):
     for pat, label in UNPINNED_PATTERNS:
         if pat.search(cmd):
             return label
     if PIPE_SHELL_PATTERN.search(cmd):
         return "network content piped directly into a shell"
+    if is_unpinned_npx(cmd):
+        return "npx -y with unpinned package (no @<version>)"
+    if is_unpinned_uvx_git(cmd):
+        return "uvx --from git+ URL without @<ref> pin"
     if is_unpinned_pip(cmd):
         return "pip install with no version constraint"
     return None

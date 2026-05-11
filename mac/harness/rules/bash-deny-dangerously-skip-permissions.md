@@ -4,10 +4,11 @@
 
 ```
 Bash(claude --dangerously-skip-permissions:*)
-Bash(:*--dangerously-skip-permissions*)
 ```
 
-Two entries to catch the canonical form and any wrapped invocation (e.g., `env FOO=bar claude --dangerously-skip-permissions`). The second pattern matches the flag anywhere in the command.
+One entry catches the canonical direct invocation. Wrapped invocations (e.g., `env FOO=bar claude --dangerously-skip-permissions`) are NOT matched by this pattern; v2.1.x's `Bash(prefix:glob)` form requires a literal command-head prefix (per Claude_Architecture.md §5.1 example `Bash(prefix:npm)` and the observed live patterns `Bash(Git:*)`, `Bash(gh:*)`, `Bash(rm:*)` in Phase 1 INVENTORY). An empty-prefix attempt at wildcard matching is unsupported by available evidence.
+
+Residual risk for wrapped invocations: the auto-mode classifier (default mode `auto` per Phase 2 Q1) handles them under its 0.4% false-positive rate. Post-launch revision may add a PreToolUse hook that scans full Bash command content for the literal `--dangerously-skip-permissions` substring; the current calibrated-minimum posture does not include it.
 
 ## Threat addressed
 
@@ -21,13 +22,18 @@ The whole point of bypass mode is to skip prompts. Asking via deny-fires-ask-dia
 
 ## Test
 
-Positive:
+Positive (matches the single pattern):
 ```
 echo '{"tool_name":"Bash","tool_input":{"command":"claude --dangerously-skip-permissions"}}'
-echo '{"tool_name":"Bash","tool_input":{"command":"env DEBUG=1 claude --dangerously-skip-permissions --resume"}}'
+echo '{"tool_name":"Bash","tool_input":{"command":"claude --dangerously-skip-permissions --resume"}}'
 ```
 
-Negative:
+Not matched (residual risk, falls to auto-mode classifier):
+```
+echo '{"tool_name":"Bash","tool_input":{"command":"env DEBUG=1 claude --dangerously-skip-permissions"}}'
+```
+
+Negative (does not fire):
 ```
 echo '{"tool_name":"Bash","tool_input":{"command":"claude --help"}}'
 ```

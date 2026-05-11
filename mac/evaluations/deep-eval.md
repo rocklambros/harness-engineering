@@ -203,7 +203,7 @@ Nominal task: Used `verification-before-completion` skill across all five build 
 
 Edge case: The 5.0.7 and 5.1.0 versions are both retained in the plugin cache (per Phase 1 inventory). The current loaded version is 5.1.0. The orphaned 5.0.7 tree does not cause routing collision (skill discovery uses the current cache, not the orphan), but it is a Phase 5 hygiene item to prune.
 
-No-op cost: 17 skills + 4 hooks + 1 agent loaded into the discovery flow. Skill descriptions are short (frontmatter only sits in cache); the body loads on SkillTool invocation. The cache footprint is the 17 frontmatter blocks, estimated ~5k tokens. Acceptable for the discipline value the collection provides.
+No-op cost: 14 skills + 1 SessionStart hook + 0 agents loaded into the discovery flow (verified by direct listing during Phase 5 audit; Phase 1 INVENTORY's 17/4/1 figure double-counted). Skill descriptions are short (frontmatter only sits in cache); the body loads on SkillTool invocation. The cache footprint is the 14 frontmatter blocks, estimated ~4k tokens. Acceptable for the discipline value the collection provides.
 
 Rationale: superpowers closes the gap between advisory CLAUDE.md text ("verify before claiming complete") and deterministic-enough enforcement (skill firing on routing). Wholesale adoption is correct because the collection's value is the curated set; cherry-picking would lose the skill priority logic (process skills first, implementation skills second) that the using-superpowers skill encodes. The plugin form preserves upstream updates without manual sync; the lastUpdated 2026-05-05 signal confirms active maintenance.
 

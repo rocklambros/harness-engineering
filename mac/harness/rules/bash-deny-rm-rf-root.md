@@ -4,13 +4,11 @@
 
 ```
 Bash(rm -rf /:*)
-Bash(rm -rf /*)
-Bash(rm -rf $HOME:*)
 Bash(rm -rf ~/:*)
-Bash(rm -rf /Users/:*)
+Bash(rm -rf $HOME:*)
 ```
 
-Five patterns cover the canonical destructive forms: literal root, root with paths, variable-expanded home, tilde home, and the macOS Users root. The patterns target the highest-impact cases; broader `rm -rf` denies would block legitimate scoped cleanup that the harness needs (build directories, temp folders inside cwd).
+Three patterns cover the highest-impact destructive forms: literal root (which also matches root-prefixed paths like `rm -rf /Users/...` and `rm -rf /etc/...` via the `:*` glob), variable-expanded home, and tilde home. A narrower `Bash(rm -rf /Users/:*)` pattern was dropped as redundant during Phase 5 audit because the broader `Bash(rm -rf /:*)` already covers it. Broader `rm -rf` denies would block legitimate scoped cleanup that the harness needs (build directories, temp folders inside cwd).
 
 ## Threat addressed
 

@@ -39,7 +39,6 @@
       "Bash(rm -rf /:*)",
       "Bash(rm -rf ~/:*)",
       "Bash(rm -rf $HOME:*)",
-      "Bash(rm -rf /Users/:*)",
       "Write(**/.env)",
       "Write(**/.env.*)",
       "Write(**/secrets/**)",
