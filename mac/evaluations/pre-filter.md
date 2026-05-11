@@ -24,32 +24,32 @@ The list below carries forward from `CHECKPOINT.md` and `foundation/03-seed-eval
 
 | Candidate | License | Mac | Jetson | Windows | Maintainership | Result | Rationale |
 |---|---|---|---|---|---|---|---|
-| `obra/superpowers` | `<TBD-PHASE-1>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` |
-| `affaan-m/everything-claude-code` | `<TBD-PHASE-1>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` |
-| `disler/claude-code-hooks-mastery` | `<TBD-PHASE-1>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` | `<TBD>` |
+| `obra/superpowers` | MIT (verified in plugin cache LICENSE) | yes (installed, v5.1.0) | `<TBD-PHASE-3>` | `<TBD-PHASE-3>` | active (plugin lastUpdated 2026-05-05) | `<TBD-PHASE-4>` | Installed as Claude Code plugin via claude-plugins-official marketplace |
+| `affaan-m/everything-claude-code` | `<TBD-PHASE-3>` | not installed | `<TBD-PHASE-3>` | `<TBD-PHASE-3>` | `<TBD-PHASE-3>` | `<TBD-PHASE-4>` | Not on machine; Phase 3 web-checks license and maintainership |
+| `disler/claude-code-hooks-mastery` | `<TBD-PHASE-3>` | not installed | `<TBD-PHASE-3>` | `<TBD-PHASE-3>` | `<TBD-PHASE-3>` | `<TBD-PHASE-4>` | Not on machine; Phase 3 web-checks license and maintainership |
 | `anthropics/claude-code` skills and plugins | Anthropic | yes | yes | yes | active | `<TBD-PHASE-3>` | First-party, baseline reference |
 
 ### Security tools
 
 | Candidate | License | Mac | Jetson | Windows | Maintainership | Result | Rationale |
 |---|---|---|---|---|---|---|---|
-| `semgrep` | LGPL (Pro: BSL) | yes | yes | yes | active | `<TBD-PHASE-3>` | Installed already; deep-eval in Phase 3 |
-| `gitleaks` | MIT | yes | yes | yes | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | `<TBD>` |
-| `trivy` | Apache-2.0 | yes | yes | yes | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | `<TBD>` |
-| `syft` | Apache-2.0 | yes | yes | yes | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | SBOM generator; QC.1 PS.2.1 candidate |
-| `grype` | Apache-2.0 | yes | yes | yes | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | `<TBD>` |
-| `cyclonedx-cli` | Apache-2.0 | yes | yes | yes | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | `<TBD>` |
-| `sigstore/cosign` | Apache-2.0 | yes | yes | yes | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | `<TBD>` |
-| `osv-scanner` | Apache-2.0 | yes | yes | yes | `<TBD-PHASE-1>` | `<TBD-PHASE-3>` | `<TBD>` |
-| `detect-secrets` | Apache-2.0 | yes | yes | yes | active | survive | Wired in Batch 1 pre-commit |
+| `semgrep` | LGPL (Pro: BSL) | yes (installed at /opt/anaconda3/bin/semgrep, broken per Phase 0; Phase 3 re-verifies) | yes | yes | active | `<TBD-PHASE-3>` | Installed already; deep-eval in Phase 3 |
+| `gitleaks` | MIT | yes (installed v8.30.0 via Homebrew) | yes | yes | active (Homebrew formula, recent version) | `<TBD-PHASE-3>` | Already installed; Phase 3 deep-evaluates against detect-secrets |
+| `trivy` | Apache-2.0 | yes (installed v0.69.0 via Homebrew) | yes | yes | active (Homebrew formula, recent version) | `<TBD-PHASE-3>` | Already installed; Phase 3 evaluates as IaC + container scanner |
+| `syft` | Apache-2.0 | yes (not installed) | yes | yes | `<TBD-PHASE-3>` | `<TBD-PHASE-3>` | SBOM generator; QC.1 PS.2.1 candidate; Phase 3 installs if adopted |
+| `grype` | Apache-2.0 | yes (not installed) | yes | yes | `<TBD-PHASE-3>` | `<TBD-PHASE-3>` | Vulnerability scanner; Phase 3 considers as syft companion |
+| `cyclonedx-cli` | Apache-2.0 | yes (not installed) | yes | yes | `<TBD-PHASE-3>` | `<TBD-PHASE-3>` | SBOM tooling; Phase 3 considers if syft+grype don't cover the format need |
+| `sigstore/cosign` | Apache-2.0 | yes (not installed) | yes | yes | `<TBD-PHASE-3>` | `<TBD-PHASE-3>` | Sigstore signing; Phase 3 considers for QC.1 PS.2.1 release integrity |
+| `osv-scanner` | Apache-2.0 | yes (not installed) | yes | yes | `<TBD-PHASE-3>` | `<TBD-PHASE-3>` | OSV vulnerability scanning; Phase 3 considers as grype alternative |
+| `detect-secrets` | Apache-2.0 | yes (binary NOT installed; pre-commit hook wired in Batch 1) | yes | yes | active | survive (pre-commit wired; Phase 3 installs binary) | Wired in Batch 1 pre-commit but binary missing on this machine per Phase 0/1 |
 
 ### Specialized integrations
 
 | Candidate | License | Mac | Jetson | Windows | Maintainership | Result | Rationale |
 |---|---|---|---|---|---|---|---|
-| `cosai-oasis/project-codeguard` | `<TBD-PHASE-1>` | `<TBD>` | `<TBD>` | `<TBD>` | pre-1.0 | `<TBD-PHASE-4>` | Pre-1.0; integration shape allows future swap |
-| MemPalace | `<TBD-PHASE-1>` | yes (installed) | `<TBD>` | `<TBD>` | `<TBD-PHASE-1>` | `<TBD-PHASE-4>` | Evaluate against alternatives, not auto-adopt |
-| Serena | `<TBD-PHASE-1>` | yes (installed) | `<TBD>` | `<TBD>` | `<TBD-PHASE-1>` | `<TBD-PHASE-4>` | Evaluate against alternatives, not auto-adopt |
+| `cosai-oasis/project-codeguard` | `<TBD-PHASE-4>` | not installed | `<TBD-PHASE-4>` | `<TBD-PHASE-4>` | pre-1.0 | `<TBD-PHASE-4>` | Pre-1.0; not on machine; Phase 4 web-checks license and integrates with future-swap shape |
+| MemPalace | MIT (verified in marketplace LICENSE) | yes (plugin v3.3.2 + binaries at /opt/anaconda3/bin/) | `<TBD-PHASE-4>` | `<TBD-PHASE-4>` | active (installed 2026-04-23; daily LaunchAgent at 03:00) | `<TBD-PHASE-4>` | Evaluate against alternatives; not auto-adopt |
+| Serena | `<TBD-PHASE-4>` (plugin local cache is stub only; full source at github:oraios/serena needs web check) | yes (plugin installed but DISABLED in user settings.json) | `<TBD-PHASE-4>` | `<TBD-PHASE-4>` | active per plugin marketplace (lastUpdated 2026-03-26), but user-disabled | `<TBD-PHASE-4>` | Evaluate against alternatives; not auto-adopt; current disabled state is a user-policy choice |
 
 ## Rejected candidates
 
