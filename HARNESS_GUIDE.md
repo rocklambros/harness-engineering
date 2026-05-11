@@ -78,7 +78,7 @@ The harness is also the place where security and quality decisions live. The run
 
 A walkthrough of what the runtime does between `claude` typed at the terminal and the first user prompt being usable. The reader who understands this sequence will understand why each layer of the harness sits where it does.
 
-First, the runtime parses command-line arguments. Flags like `--model claude-sonnet-4-6` or `--resume` get applied. A `--dangerously-skip-permissions` flag, if present and not blocked by the user-level `skipDangerousModePermissionPrompt` setting, sets the session into bypass mode. The Mac harness denies the flag at the rule layer and removes the bypass-without-prompt setting at the user level per Phase 2 Q9.
+First, the runtime parses command-line arguments. Flags like `--model claude-sonnet-4-6` or `--resume` get applied. A `--dangerously-skip-permissions` flag, if present, sets the session into bypass mode. The Mac harness denies model-proposed invocations of the flag at the Bash rule layer; operator-initiated bypass at session start is permitted per Phase 2 Q9 (narrowed 2026-05-11), and `skipDangerousModePermissionPrompt: true` in `~/.claude/settings.json` is the documented expected state for that case.
 
 Second, the runtime resolves the working directory and walks the project hierarchy looking for `CLAUDE.md` files. It loads the project root, any nested `CLAUDE.md` between the project root and the working directory, and (for this repository) `mac/harness/CLAUDE.md`. These contribute to the cached prefix.
 
@@ -572,7 +572,7 @@ Each entry binds a SHA-256 hash to its audit metadata. The hook treats absence o
 
 **What it blocks.** Direct invocations of bypass mode. Wrapped invocations like `env DEBUG=1 claude --dangerously-skip-permissions` are not matched by this pattern. v2.1.x's `Bash(prefix:glob)` form requires a literal command-head prefix per `research/Claude_Architecture.md` §5.1.
 
-**Why it is calibrated this way.** Foundation Principle 1: hooks enforce, CLAUDE.md advises. The advisory text in `mac/harness/CLAUDE.md` names bypass mode as "not an acceptable tradeoff," and Phase 2 Q9 elected to remove `skipDangerousModePermissionPrompt: true` from the rebuilt `~/.claude/settings.json` so even bypass invocations carry a confirmation dialog. This rule is the deterministic floor under both. The Phase 5 audit F02 dropped an unsupported empty-prefix attempt that did not produce enforcement. the single remaining pattern is the deliberate calibrated-minimum. Wrapped invocations fall to the auto-mode classifier as residual risk, with a post-launch revision trigger to add a content-scanning PreToolUse hook if the residual rate becomes a problem.
+**Why it is calibrated this way.** Foundation Principle 1: hooks enforce, CLAUDE.md advises. The advisory text in `mac/harness/CLAUDE.md` names model-proposed bypass as a path the harness keeps closed, and the deny rule is the deterministic floor under it. Phase 2 Q9 originally elected to remove `skipDangerousModePermissionPrompt: true` from the rebuilt `~/.claude/settings.json`; the 2026-05-11 narrowing kept the deny rule for model-proposed invocations and accepted operator-initiated bypass at session start as the documented expected state. The Phase 5 audit F02 dropped an unsupported empty-prefix attempt that did not produce enforcement; the single remaining pattern is the deliberate calibrated-minimum. Wrapped invocations fall to the auto-mode classifier as residual risk, with a post-launch revision trigger to add a content-scanning PreToolUse hook if the residual rate becomes a problem.
 
 **Why deny, not ask.** The whole point of bypass mode is to skip prompts. Asking via deny-fires-ask-dialog defeats the user's intent. Outright deny is the right cost. legitimate bypass use cases (no-internet sandboxes per `claude --help`) are rare, deliberate, and worth the friction of removing this rule for one session.
 
@@ -1340,7 +1340,7 @@ A short reference for terms used in this document. Each entry is one to three se
 
 **Bash deny rule.** A `permissions.deny` pattern of the form `Bash(prefix:argument-glob)` that blocks matching Bash commands. The Mac harness uses these for force-push, sudo, bypass mode, and root-targeted `rm -rf`. See §4.9 through §4.12.
 
-**Bypass mode.** The `--dangerously-skip-permissions` flag (or the `permissions.defaultMode: "bypassPermissions"` setting) that skips the runtime's prompt and gate logic. The Mac harness denies the flag at the rule layer and removes the `skipDangerousModePermissionPrompt: true` setting at the user level per Phase 2 Q9. See §4.9.
+**Bypass mode.** The `--dangerously-skip-permissions` flag (or the `permissions.defaultMode: "bypassPermissions"` setting) that skips the runtime's prompt and gate logic. The Mac harness denies model-proposed invocations of the flag at the Bash rule layer; operator-initiated bypass at session start is permitted per Phase 2 Q9 (narrowed 2026-05-11), and `skipDangerousModePermissionPrompt: true` in `~/.claude/settings.json` is the documented expected state for that case. See §4.9.
 
 **Cache hit ratio.** The fraction of cached-prefix reads that hit the cache rather than re-reading the file. A high ratio (above 90%) is the QC.4a target. a sudden drop is the leading indicator of a timestamp-in-prefix violation. See §3.3 and §7.5.
 

@@ -54,7 +54,7 @@ Bash command chains with more than 50 subcommands fall back to a single generic 
 
 Pre-trust initialization (CVE-2025-59536 class) executes code in `.claude/settings.json` and `.mcp.json` before the user trust dialog appears. Treat every cloned repo as hostile until those files are audited.
 
-Settings on the model that look free (`--dangerously-skip-permissions`) cost real threat coverage. The 0.4% false-positive rate of the auto-mode classifier is the cheaper trade.
+Model-proposed `--dangerously-skip-permissions` invocations are denied at the Bash rule layer; the 0.4% false-positive rate of the auto-mode classifier (Hughes 2026) is the cheaper trade against model-initiated bypass. Operator-initiated bypass at session start (terminal launch with the flag) is a separate decision and is permitted; `skipDangerousModePermissionPrompt: true` in `~/.claude/settings.json` is the documented expected state for that case. The deny rule preserves the threat-model assumption that the model cannot escalate to bypass mode by itself; the residual risk under operator-initiated bypass (prompt injection in tool returns reaching shell without confirmation) lands on the operator.
 
 Long CLAUDE.md hierarchies degrade instruction following uniformly across instruction count. HumanLayer's analysis surfaces this. A short focused CLAUDE.md outperforms a long thorough one.
 

@@ -54,7 +54,7 @@ Cache writes shorter than 1024 tokens silently fail to cache. Per-model cache is
 
 Timestamps or per-run identifiers in any CLAUDE.md or cached-prefix file break cache reuse without raising an error.
 
-`--dangerously-skip-permissions` is denied at the rule layer. The 0.4% false-positive rate of the auto-mode classifier (Hughes 2026) costs less than the threat coverage bypass mode loses.
+Model-proposed `--dangerously-skip-permissions` invocations are denied at the Bash rule layer. Operator-initiated bypass at session start (terminal launch with the flag) is permitted; `skipDangerousModePermissionPrompt: true` in `~/.claude/settings.json` is the documented expected state for that case. The deny rule preserves the threat-model assumption that the model cannot escalate to bypass mode by itself. The 0.4% false-positive rate of the auto-mode classifier (Hughes 2026) is the cheaper trade against model-initiated bypass; the residual risk under operator-initiated bypass lands on the operator.
 
 The 93% approval rate on permission prompts (Hughes 2026) means user vigilance is not a defense. Every rule that depends on Rock catching it in real time will eventually fail. Encode it deterministically or do not depend on it.
 

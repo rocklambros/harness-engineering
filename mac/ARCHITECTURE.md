@@ -56,7 +56,7 @@ The deny-first, ask-by-default permission system from Claude_Architecture.md §5
 - **Permission mode default**: `auto`. The classifier handles ambient cases; the deny rules below catch the rest.
 - **Deny rules (6, in `mac/harness/rules/`)**:
   - `bash-deny-git-push-force.md` — `git push --force`, `-f`, `--force-with-lease`. Principle 3 (reversibility) and Asset #1 (source code integrity).
-  - `bash-deny-dangerously-skip-permissions.md` — bypass mode invocations. Principle 1 (hooks enforce) and Q9.
+  - `bash-deny-dangerously-skip-permissions.md` — model-proposed bypass-mode invocations. Principle 1 (hooks enforce) and Q9 (narrowed 2026-05-11: operator-initiated bypass at session start is permitted; `skipDangerousModePermissionPrompt: true` in `~/.claude/settings.json` is the documented expected state for that case).
   - `bash-deny-sudo.md` — root execution. Principle 2 (least privilege).
   - `bash-deny-rm-rf-root.md` — `rm -rf /`, `~/`, `$HOME`, `/Users/`. Principle 3 (reversibility).
   - `filesystem-deny-write-secrets.md` — Write/Edit to `.env`, `secrets/`, `credentials.json`. Asset #2 (secrets).
