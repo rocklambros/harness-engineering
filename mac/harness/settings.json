@@ -9,7 +9,8 @@
     "  sessionLogPath.",
     "Phase 2 set: permissions.defaultMode (Q1 auto), logging.retentionDays (Q11 90).",
     "Phase 3 set: permissions.deny patterns, hooks block, sandbox.enabled.",
-    "Phase 4 owns: mcpServers allowlist.",
+    "Phase 4 set: enabledPlugins (calibrated minimum: superpowers + mempalace).",
+    "Phase 5 expands mcpServers and enabledPlugins for daily-driver per Q3 rebuild.",
     "",
     "JSON does not support comments; documentation lives in _documentation keys",
     "that Claude Code ignores. The file parses as strict JSON."
@@ -111,13 +112,31 @@
     ]
   },
 
+  "enabledPlugins": {
+    "_documentation": [
+      "Phase 4 calibrated minimum. The harness reference enables two plugins:",
+      "superpowers (skill collection adopted whole) and mempalace (memory MCP",
+      "plus skill). Rationale per plugin in phase-outputs/PHASE-4-NOTES.md.",
+      "",
+      "Phase 5 expands this map for Rock's daily-driver in ~/.claude/settings.json",
+      "per Q3 rebuild. Each added plugin gets an audit pass under the",
+      "mcp-server-pre-trust-audit skill before landing."
+    ],
+    "superpowers@claude-plugins-official": true,
+    "mempalace@mempalace": true
+  },
+
   "mcpServers": {
     "_documentation": [
-      "Empty by default. Phase 4 evaluates and adds servers with rationale in",
-      "mac/evaluations/deep-eval.md and the commit message. An unlisted server",
-      "does not reach getAllBaseTools() at tool pool assembly time, which is the",
-      "mechanism that enforces the deny-by-default posture per",
-      "mac/harness/rules/mcp-deny-server-prefix-default.md."
+      "Empty by default. Phase 4's enabledPlugins above carries the calibrated",
+      "minimum (mempalace registers via its own .mcp.json under the plugin).",
+      "Direct mcpServers entries are reserved for servers without a plugin",
+      "wrapper. The context7 MCP server is plugin-available but its default",
+      "invocation is unpinned (npx -y @upstash/context7-mcp); Phase 4 chose",
+      "not to register it here pending Phase 5's daily-driver review where",
+      "Rock decides between pinning (npx -y ...@<version>) or skipping.",
+      "An unlisted MCP server does not reach getAllBaseTools() at tool pool",
+      "assembly time per mac/harness/rules/mcp-deny-server-prefix-default.md."
     ]
   },
 

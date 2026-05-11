@@ -189,6 +189,95 @@ The agentcontrolstandard.ai work Rock mentioned in Phase 2 Q8 is the same shape 
 Drift trigger: Codeguard 1.0 release, or agentcontrolstandard.ai ship.
 Version pin: not applicable (deferred).
 
+## Phase 4 evaluations
+
+Run date: 2026-05-11. Six candidates from the extension-layer class: obra/superpowers, affaan-m/everything-claude-code, disler/claude-code-hooks-mastery, MemPalace, Serena, and the broader plugin set Rock currently runs (16 plugins inventoried by Phase 1).
+
+### obra/superpowers
+
+Stage 2 entry: Phase 4
+Date evaluated: 2026-05-11
+Decision: integrate (wholesale, plugin form)
+
+Nominal task: Used `verification-before-completion` skill across all five build phases. The skill correctly fires on completion-claim prompts, walks the iron-law gate (run verification → read output → claim with evidence), and prevents the silent-failure modes the skill description names. Used `using-superpowers` to scaffold every phase's skill discovery. Both produced behavior that the harness's CLAUDE.md alone does not: the verification-before-completion gate fires on completion-claim PROMPTS rather than waiting for the model to remember it from CLAUDE.md.
+
+Edge case: The 5.0.7 and 5.1.0 versions are both retained in the plugin cache (per Phase 1 inventory). The current loaded version is 5.1.0. The orphaned 5.0.7 tree does not cause routing collision (skill discovery uses the current cache, not the orphan), but it is a Phase 5 hygiene item to prune.
+
+No-op cost: 17 skills + 4 hooks + 1 agent loaded into the discovery flow. Skill descriptions are short (frontmatter only sits in cache); the body loads on SkillTool invocation. The cache footprint is the 17 frontmatter blocks, estimated ~5k tokens. Acceptable for the discipline value the collection provides.
+
+Rationale: superpowers closes the gap between advisory CLAUDE.md text ("verify before claiming complete") and deterministic-enough enforcement (skill firing on routing). Wholesale adoption is correct because the collection's value is the curated set; cherry-picking would lose the skill priority logic (process skills first, implementation skills second) that the using-superpowers skill encodes. The plugin form preserves upstream updates without manual sync; the lastUpdated 2026-05-05 signal confirms active maintenance.
+
+Drift trigger: Plugin lastUpdated drift past 90 days, or upstream major version (6.0.x).
+Version pin: 5.1.0 (per `installed_plugins.json`)
+
+### MemPalace
+
+Stage 2 entry: Phase 4
+Date evaluated: 2026-05-11
+Decision: integrate
+
+Nominal task: All MCP calls verified working in this build session. `mempalace_diary_write` accepted AAAK-formatted entries across phases (Phase 2 entry_id diary_wing_claude-code_20260511, Phase 3 entry_id diary_wing_claude-code_20260511_085635773368). `mempalace_add_drawer` accepted full prose records (Phase 2 drawer 8250356d9c729f7d04ed3a36, Phase 3 drawer 5eb86f6da826eec5ec6a8075). `mempalace_kg_add` produced retrievable triples for project memory (Mac harness build phase_status fact, gitleaks supersedes-detect-secrets fact, Rock-works_on-agentcontrolstandard.ai fact). The `/opt/anaconda3/bin/mempalace-mcp --help` invocation returns the documented argument set in <100ms.
+
+Edge case: Phase 2 surfaced a drawer-content-corruption bug when add_drawer was called with content containing XML-like `</content>` and `<added_by>` tags; the drawer was created with the trailing junk and the returned drawer_id could not be retrieved via get_drawer. Workaround: refile the clean version as a new drawer (Phase 2 record). Recorded as a known MemPalace bug, not a harness defect. The bug does not block adoption because the workaround is deterministic.
+
+No-op cost: 39 mempalace_* tools registered when the plugin is enabled. Their schemas sit in the deferred-tool list (loaded on demand via ToolSearch per the runtime's lazy-load behavior on this version). Active cache footprint is the plugin's setup metadata, not the full tool schemas. Daily LaunchAgent at 03:00 runs `/opt/anaconda3/bin/python3 /Users/klambros/.mempalace/maintenance.py` for back-end housekeeping; cost negligible.
+
+Rationale: MemPalace provides cross-session structured memory that Claude Code's native auto-memory does not: drawers + wings + rooms for content, AAAK-format diaries for compressed agent histories, knowledge-graph triples with time windows. Phase 2 Q4 enabled native auto-memory; MemPalace lives alongside it for the structured workflows where auto-memory's free-form .md format does not fit (e.g., the AAAK phase summaries this build produced). The two systems are complementary, not redundant.
+
+Alternative considered: goodmem (also installed per Phase 1). goodmem is rejected because MemPalace's structured-memory shape is already wired into Rock's workflow (LaunchAgent, daily maintenance, 2 wings + multiple drawers in active use) and the goodmem feature surface duplicates without adding distinct value.
+
+Drift trigger: Security advisory, or major release (4.0.x), or the documented add_drawer content-corruption bug not being fixed within 90 days.
+Version pin: 3.3.2 (plugin manifest and Anaconda binary)
+
+### Serena
+
+Stage 2 entry: Phase 4
+Date evaluated: 2026-05-11
+Decision: defer (respect user-disabled signal)
+
+Nominal task: Not exercised. The plugin is installed at `~/.claude/plugins/cache/claude-plugins-official/serena/unknown/` but the user's settings.json sets `serena@claude-plugins-official: false`. Per Phase 1 inventory, the disable is deliberate (not an accident of installation).
+
+Edge case: Not run.
+
+No-op cost: When disabled, the plugin's tools do not enter the pool. Cache footprint is zero. The plugin cache directory is on-disk but does not load.
+
+Rationale: Serena is an LSP integration that provides semantic code navigation (find symbol, references, rename across language). The use case is high-friction in Claude Code's flat-tool-pool model: LSP responses are large, the model has to learn the symbol-navigation vocabulary, and the harness's existing built-in tools (Grep, Glob, Read) cover the common navigation cases. Rock's pre-existing decision to disable Serena is the strongest evidence available about the cost-vs-value gradient on this machine. The harness reference respects the signal: keep disabled, defer adoption until Rock has a specific use case that built-ins do not serve.
+
+Drift trigger: Rock requests a specific code-navigation task that built-ins cannot handle, or upstream major version with a new feature surface.
+Version pin: not applicable (deferred).
+
+### affaan-m/everything-claude-code
+
+Stage 2 entry: Phase 4 (paper evaluation; not installed)
+Decision: reject
+
+Nominal task: Not run; project is not present on this machine.
+
+Edge case: Not run.
+
+No-op cost: zero (would be the adoption cost if installed).
+
+Rationale: The repository is a configuration reference rather than a tool. The harness's `foundation/` documents and `mac/ARCHITECTURE.md` carry the equivalent reasoning in a form that fits this build's needs. Adopting a second reference repository would create a maintenance vector (sync with upstream) for material the harness already owns. The post-launch revision cadence is the appeal path if a specific affaan-m skill or hook turns out to close a gap; current signal does not justify wholesale adoption.
+
+### disler/claude-code-hooks-mastery
+
+Stage 2 entry: Phase 4 (paper evaluation; not installed)
+Decision: reject
+
+Nominal task: Not run.
+
+Edge case: Not run.
+
+No-op cost: zero.
+
+Rationale: The hooks Phase 3 wrote (6 Python scripts, each with header, threat citation, verification command) cover the threats Phase 2 elected. The disler reference adds breadth (more hook examples) without depth (no hook there enforces a threat Phase 2 elected that Phase 3 has not already covered). Adopting the broader hook collection would introduce hooks for threats Phase 2 explicitly skipped or deferred, weakening the calibrated-minimum posture. Reject; revisit post-launch if a specific hook there turns out to fill a Phase 3 gap.
+
+### Other enabled plugins (13)
+
+The current `~/.claude/settings.json` enables 13 plugins beyond superpowers and mempalace: context7, github, security-guidance, playwright, pyright-lsp, feature-dev, code-review, vercel, ralph-loop, goodmem, frontend-design, plus typescript-lsp/sentry/serena currently disabled. The Phase 4 harness reference (`mac/harness/settings.json`) carries only superpowers + mempalace as the calibrated minimum.
+
+Phase 5 deep-evaluates the other 13 plugins for inclusion in Rock's rebuilt `~/.claude/settings.json` per Q3. Each adoption decision applies the `mcp-server-pre-trust-audit` skill (for plugins that ship MCP servers) and the `seed-evaluation` skill (for plugins that ship skills, agents, or commands). The context7 plugin's unpinned-npx invocation is the first decision in that pass; the rationale for the supply-chain-discipline override lives in `phase-outputs/PHASE-4-NOTES.md` §context7.
+
 ## Rejected after deep eval
 
 Candidates that survive pre-filter but fail deep eval land here with a paragraph naming the specific failure mode. The list serves two purposes: it prevents re-evaluation of the same candidate without new information, and it documents what failure modes the methodology actually catches.
