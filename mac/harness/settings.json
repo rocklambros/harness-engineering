@@ -1,0 +1,166 @@
+{
+  "_documentation": [
+    "Mac harness Claude Code settings, populated by Phase 3 (2026-05-11).",
+    "Source-of-truth reference. Phase 5 propagates to ~/.claude/settings.json",
+    "with absolute paths and any user-level customization (e.g., additionalDirectories).",
+    "The template at settings.json.template stays unchanged as the schema skeleton.",
+    "",
+    "Phase 0 set: claude_code_version_pin, model.default, model.subagentDefault,",
+    "  sessionLogPath.",
+    "Phase 2 set: permissions.defaultMode (Q1 auto), logging.retentionDays (Q11 90).",
+    "Phase 3 set: permissions.deny patterns, hooks block, sandbox.enabled.",
+    "Phase 4 owns: mcpServers allowlist.",
+    "",
+    "JSON does not support comments; documentation lives in _documentation keys",
+    "that Claude Code ignores. The file parses as strict JSON."
+  ],
+
+  "_claude_code_version_pin": "2.1.*",
+
+  "permissions": {
+    "_documentation": [
+      "Deny-first per Claude_Architecture.md §5.2 (toolMatchesRule). Broad denies",
+      "win over narrow allows. Each pattern below maps to a file in mac/harness/rules/",
+      "with the threat citation and test. Phase 4 may add narrow allows under the",
+      "MCP allowlist; those land in mcpServers, not here.",
+      "",
+      "defaultMode 'auto' enables the ML classifier (Hughes 2026, 0.4% FP rate)",
+      "per Phase 2 Q1. The deny rules below are the deterministic floor under it."
+    ],
+    "defaultMode": "auto",
+    "allow": [],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push --force-with-lease:*)",
+      "Bash(claude --dangerously-skip-permissions:*)",
+      "Bash(sudo:*)",
+      "Bash(rm -rf /:*)",
+      "Bash(rm -rf ~/:*)",
+      "Bash(rm -rf $HOME:*)",
+      "Bash(rm -rf /Users/:*)",
+      "Write(**/.env)",
+      "Write(**/.env.*)",
+      "Write(**/secrets/**)",
+      "Write(**/.secrets/**)",
+      "Write(**/credentials.json)",
+      "Edit(**/.env)",
+      "Edit(**/.env.*)",
+      "Edit(**/secrets/**)",
+      "Edit(**/.secrets/**)",
+      "Edit(**/credentials.json)"
+    ],
+    "additionalDirectories": []
+  },
+
+  "hooks": {
+    "_documentation": [
+      "Hook scripts in mac/harness/hooks/, each carries a header block with its",
+      "event, threat citation, verification command, and owner. Path uses",
+      "${CLAUDE_PROJECT_DIR} so the harness-engineering repo session resolves",
+      "correctly; Phase 5 substitutes absolute paths when propagating to",
+      "~/.claude/settings.json."
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/PreToolUse-bash-cap-subcommands.py"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/PreToolUse-supply-chain-bash-checks.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/PreToolUse-external-write-gate.py"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/PreToolUse-cached-prefix-write-gate.py"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/SessionStart-audit-claude-config.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/Stop-prune-session-logs.py"
+          }
+        ]
+      }
+    ]
+  },
+
+  "mcpServers": {
+    "_documentation": [
+      "Empty by default. Phase 4 evaluates and adds servers with rationale in",
+      "mac/evaluations/deep-eval.md and the commit message. An unlisted server",
+      "does not reach getAllBaseTools() at tool pool assembly time, which is the",
+      "mechanism that enforces the deny-by-default posture per",
+      "mac/harness/rules/mcp-deny-server-prefix-default.md."
+    ]
+  },
+
+  "model": {
+    "_documentation": [
+      "Phase 0 decisions. Same-family parent/subagent share cache per QC.4a.",
+      "Per-Task overrides to Sonnet or Haiku happen explicitly at invocation."
+    ],
+    "default": "claude-opus-4-7",
+    "subagentDefault": "claude-opus-4-7"
+  },
+
+  "sandbox": {
+    "_documentation": [
+      "Disabled. Claude Code v2.1.138 exposes no sandbox CLI flag; the",
+      "permission layer (deny rules + hooks + interactive approval) carries",
+      "the load per Principle 1. macOS sandbox-exec is available as an OS",
+      "primitive but the runtime's documented use of it is not visible from",
+      "claude --help. Phase 3 verified the absence behaviorally and chose not",
+      "to enable. Re-evaluate on Claude Code minor bump per QC.5."
+    ],
+    "enabled": false,
+    "excludePatterns": []
+  },
+
+  "cache_control": {
+    "_documentation": [
+      "Direct API/SDK cache discipline per QC.4a. The 1h TTL is required for",
+      "cache reuse beyond five minutes; default reverted to 5m in March 2026.",
+      "Telemetry-off drops the 1h TTL silently."
+    ],
+    "ttl": "1h",
+    "telemetry": true
+  },
+
+  "logging": {
+    "_documentation": [
+      "Session log path is fixed by Claude Code per project; the cwd is encoded",
+      "with '/' replaced by '-'. retentionDays of 90 (Phase 2 Q11) is enforced",
+      "by Stop-prune-session-logs.py against ~/.claude/projects/*.jsonl. The",
+      "aggregate ~/.claude/history.jsonl is exempt (rolling buffer)."
+    ],
+    "sessionLogPath": "~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl",
+    "retentionDays": 90
+  }
+}
