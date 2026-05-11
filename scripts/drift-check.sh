@@ -7,13 +7,22 @@
 #
 # Two checks:
 #
-# 1. CLAUDE.md hierarchy line count.
-#    Total lines across CLAUDE.md, harness/CLAUDE.md, and any nested
-#    CLAUDE.md files must stay under 400. Target is 250. The 400-line
-#    cap reflects the threshold above which instruction-following
-#    degrades non-trivially in observation. The target of 250 leaves
-#    headroom for the platform-specific harness CLAUDE.md to grow
-#    without immediately tripping the cap.
+# 1. Worst-case per-session CLAUDE.md hierarchy line count.
+#    Each Claude Code session walks from cwd up to the project root,
+#    loading every CLAUDE.md it finds. The cached prefix per session
+#    is root CLAUDE.md plus the platform-specific hierarchy under one
+#    platform directory (e.g., mac/CLAUDE.md if present plus
+#    mac/harness/CLAUDE.md). The drift check computes the worst case
+#    across all platform-session combinations and tests against the
+#    cap. The 400-line cap reflects the threshold above which
+#    instruction-following degrades non-trivially. The 250-line target
+#    leaves headroom for platform CLAUDE.md files to grow without
+#    immediately tripping the cap.
+#
+#    Earlier versions of this script summed every CLAUDE.md file in the
+#    repo. That was correct as a paranoid guardrail but wrong as a
+#    model of per-session cache prefix reality, since only one platform
+#    loads per session. The current model tracks what actually loads.
 #
 # 2. Cached-prefix poisoning patterns.
 #    The cached prefix must be cacheable across runs. Timestamps,
@@ -37,14 +46,13 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT"
 
-# Configuration. Editable here; the rationale is in the header.
+# Configuration. Editable here. The rationale is in the header.
 LINE_CAP=400
 LINE_TARGET=250
 
-# Files that contribute to the cached prefix and therefore must stay
-# free of per-run state. Add new entries here when new cached-prefix
-# files appear (e.g., per-platform harness/CLAUDE.md as platforms get
-# built out).
+# Globs that identify cached-prefix files for the poisoning check.
+# The line-count check categorizes by path pattern below and does not
+# use these globs directly.
 CACHED_PREFIX_GLOBS=(
     "CLAUDE.md"
     "*/CLAUDE.md"
@@ -52,7 +60,6 @@ CACHED_PREFIX_GLOBS=(
 )
 
 # Patterns that indicate per-run state in a cached-prefix file.
-# Each pattern is paired with a short reason for the diagnostic.
 # Patterns are ERE (extended regex). Case-sensitive on purpose:
 # false positives on innocuous prose are worse than missed exact matches.
 declare -a POISON_PATTERNS=(
@@ -79,28 +86,88 @@ if [ ${#CLAUDE_FILES[@]} -eq 0 ]; then
     exit 0
 fi
 
-# Check 1: line count.
-total=0
-for f in "${CLAUDE_FILES[@]}"; do
-    if [ -r "$f" ]; then
-        lines=$(wc -l < "$f")
-        total=$((total + lines))
+# Helper. Returns line count for a file if it exists, otherwise 0.
+lines_or_zero() {
+    if [ -f "$1" ]; then
+        wc -l < "$1"
     else
+        echo 0
+    fi
+}
+
+# Categorize CLAUDE.md files by path pattern.
+ROOT_LINES=$(lines_or_zero "./CLAUDE.md")
+
+# Discover platform directories from the */harness/CLAUDE.md pattern.
+declare -a PLATFORMS=()
+for f in */harness/CLAUDE.md; do
+    if [ -f "$f" ]; then
+        platform_path="${f%/harness/CLAUDE.md}"
+        PLATFORMS+=("$platform_path")
+    fi
+done
+
+# Per-platform session totals. Each platform's worst case is the sum
+# of root CLAUDE.md, an optional platform-level CLAUDE.md, and the
+# platform's operational harness/CLAUDE.md.
+declare -a SESSION_REPORT=()
+WORST_CASE=$ROOT_LINES
+for p in "${PLATFORMS[@]}"; do
+    platform_lines=$(lines_or_zero "./$p/CLAUDE.md")
+    harness_lines=$(lines_or_zero "./$p/harness/CLAUDE.md")
+    session_total=$((ROOT_LINES + platform_lines + harness_lines))
+    SESSION_REPORT+=("  $p session: $session_total lines (root=$ROOT_LINES, $p/CLAUDE.md=$platform_lines, $p/harness/CLAUDE.md=$harness_lines)")
+    if [ "$session_total" -gt "$WORST_CASE" ]; then
+        WORST_CASE=$session_total
+    fi
+done
+
+# Identify any CLAUDE.md files outside the expected root/platform pattern.
+# These are not necessarily wrong but should be visible.
+declare -a OTHER_FILES=()
+for f in "${CLAUDE_FILES[@]}"; do
+    case "$f" in
+        ./CLAUDE.md) ;;
+        ./*/CLAUDE.md) ;;
+        ./*/harness/CLAUDE.md) ;;
+        *) OTHER_FILES+=("$f") ;;
+    esac
+done
+
+# Verify every CLAUDE.md found is readable. Catches permissions issues
+# that would otherwise pollute the count silently.
+for f in "${CLAUDE_FILES[@]}"; do
+    if [ ! -r "$f" ]; then
         echo "drift-check: cannot read $f" >&2
         exit 2
     fi
 done
 
 line_count_status=0
-if [ "$total" -gt "$LINE_CAP" ]; then
+if [ "$WORST_CASE" -gt "$LINE_CAP" ]; then
     line_count_status=1
-    echo "FAIL: CLAUDE.md hierarchy is $total lines, over the $LINE_CAP cap."
-    for f in "${CLAUDE_FILES[@]}"; do
-        echo "  $(wc -l < "$f") $f"
-    done
-    echo "QC.4b context discipline: trim the hierarchy to under $LINE_CAP lines."
-elif [ "$total" -gt "$LINE_TARGET" ]; then
-    echo "WARN: CLAUDE.md hierarchy is $total lines, over the $LINE_TARGET target."
+    echo "FAIL: worst-case per-session CLAUDE.md hierarchy is $WORST_CASE lines, over the $LINE_CAP cap."
+    if [ ${#SESSION_REPORT[@]} -gt 0 ]; then
+        echo "Per-platform session totals:"
+        for line in "${SESSION_REPORT[@]}"; do
+            echo "$line"
+        done
+    fi
+    if [ ${#OTHER_FILES[@]} -gt 0 ]; then
+        echo "CLAUDE.md files outside the root/platform pattern:"
+        for f in "${OTHER_FILES[@]}"; do
+            echo "  $(wc -l < "$f") $f"
+        done
+    fi
+    echo "QC.4b context discipline: trim the worst-case session to under $LINE_CAP lines."
+elif [ "$WORST_CASE" -gt "$LINE_TARGET" ]; then
+    echo "WARN: worst-case per-session CLAUDE.md hierarchy is $WORST_CASE lines, over the $LINE_TARGET target."
+    if [ ${#SESSION_REPORT[@]} -gt 0 ]; then
+        echo "Per-platform session totals:"
+        for line in "${SESSION_REPORT[@]}"; do
+            echo "$line"
+        done
+    fi
     echo "Still under the $LINE_CAP cap but the slack is shrinking."
 fi
 
@@ -138,5 +205,5 @@ if [ "$line_count_status" -ne 0 ] || [ "$poison_status" -ne 0 ]; then
     exit 1
 fi
 
-echo "drift-check: OK ($total lines across ${#CLAUDE_FILES[@]} CLAUDE.md file(s))"
+echo "drift-check: OK (worst-case per-session $WORST_CASE lines across ${#CLAUDE_FILES[@]} CLAUDE.md file(s))"
 exit 0
