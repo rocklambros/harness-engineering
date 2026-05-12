@@ -42,7 +42,7 @@ When you encounter a `.claude/settings.json` or `.mcp.json` in a cloned reposito
 
 Do not chain more than 30 subcommands in a single Bash invocation. Claude Code falls back to a single generic approval prompt above 50 subcommands instead of per-subcommand deny-rule checks (Adversa.ai 2026). The harness caps at 30 for defense in depth. The `PreToolUse-bash-cap-subcommands.py` hook enforces the cap; do not rely on the hook to catch your own carelessness.
 
-Reversibility weights friction. Read freely. Write inside the working directory freely once the project trusts you. Write outside the working directory only with explicit confirmation. `git push --force` is denied at the rule layer. `rm -rf /`, `rm -rf ~/`, `rm -rf $HOME`, `rm -rf /Users/` are denied at the rule layer.
+Reversibility weights friction. Read freely. Write inside the working directory freely once the project trusts you. Write outside the working directory only with explicit confirmation. Model-proposed `git push --force`, `-f`, and `--force-with-lease` fire the `PreToolUse-git-push-force-ask.py` hook and require interactive confirmation (2026-05-12 revision narrowed from deny to hook-mediated ask per operator's admin-bypass workflow). Operator-initiated force-push from the terminal is out of scope. `rm -rf /`, `rm -rf ~/`, `rm -rf $HOME`, `rm -rf /Users/` are denied at the rule layer.
 
 When registering a new MCP server, invoke the `mcp-server-pre-trust-audit` skill before adding to `~/.claude/mcp.json` or `mac/harness/settings.json` `mcpServers`. Six-check audit: license, source review, network egress, version pin, secret handling, tool subset.
 

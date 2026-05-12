@@ -31,9 +31,6 @@
     "defaultMode": "auto",
     "allow": [],
     "deny": [
-      "Bash(git push --force:*)",
-      "Bash(git push -f:*)",
-      "Bash(git push --force-with-lease:*)",
       "Bash(claude --dangerously-skip-permissions:*)",
       "Bash(sudo:*)",
       "Bash(rm -rf /:*)",
@@ -72,6 +69,10 @@
           {
             "type": "command",
             "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/PreToolUse-supply-chain-bash-checks.py"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/PreToolUse-git-push-force-ask.py"
           }
         ]
       },

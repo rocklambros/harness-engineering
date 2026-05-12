@@ -98,8 +98,8 @@ Either path teaches the discipline. Pick by preference.
 Concrete numbers, recorded against the Mac section's first build completion on 2026-05-11.
 
 - 7 phase prompts in `mac/prompts/` (pre-flight, Phase 0, Phases 1 through 5), each with a standard header and explicit verification criteria.
-- 6 permission deny rules in `mac/harness/rules/` covering `git push --force`, model-proposed bypass mode, sudo, `rm -rf` against root paths, secret-file writes, and the MCP server-prefix default.
-- 6 Python hook scripts in `mac/harness/hooks/` covering subcommand-cap, external-write gating, supply-chain checks on unpinned installs, cached-prefix write gating, in-repo `.claude/`-config audit at session start, and session-log pruning at 90 days.
+- 5 permission deny rules in `mac/harness/rules/` covering model-proposed bypass mode, sudo, `rm -rf` against root paths, secret-file writes, and the MCP server-prefix default.
+- 7 Python hook scripts in `mac/harness/hooks/` covering subcommand-cap, external-write gating, supply-chain checks on unpinned installs, cached-prefix write gating, force-push ask, in-repo `.claude/`-config audit at session start, and session-log pruning at 90 days.
 - 2 harness skills in `mac/harness/skills/` (`mcp-server-pre-trust-audit`, `seed-evaluation`) that close foundation gaps the CLAUDE.md describes but does not operationalize.
 - 2 subagent definitions in `mac/harness/agents/` (`reviewer`, `inventory`), both pinned to same-family Opus 4.7 for cache lineage per QC.4a.
 - 2 enabled plugins (`superpowers@claude-plugins-official` v5.1.0 with 14 skills, `mempalace@mempalace` v3.3.2 with 1 skill and 39 deferred-load tools).

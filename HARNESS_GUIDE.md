@@ -199,7 +199,7 @@ The permission layer decides whether a tool call is allowed, asked, or denied. E
 
 The layer has four moving parts: deny rules, allow rules, the permission mode, and `additionalDirectories`.
 
-**Deny rules** are patterns of the form `Tool(prefix:argument-glob)`. Examples: `Bash(git push --force:*)`, `Write(**/.env)`, `mcp__sentry__delete_project`. A matching deny rule stops the tool call. The runtime evaluates denies first, so a broad deny on `Bash(rm -rf /:*)` overrides any narrow allow.
+**Deny rules** are patterns of the form `Tool(prefix:argument-glob)`. Examples: `Bash(sudo:*)`, `Write(**/.env)`, `mcp__sentry__delete_project`. A matching deny rule stops the tool call. The runtime evaluates denies first, so a broad deny on `Bash(rm -rf /:*)` overrides any narrow allow.
 
 **Allow rules** are patterns of the same form that pre-approve calls without prompting. Examples: `Bash(git status:*)`, `Read(*)`. Allow rules are useful for high-frequency, low-risk operations. The runtime evaluates allows after denies.
 
@@ -207,13 +207,13 @@ The layer has four moving parts: deny rules, allow rules, the permission mode, a
 
 **`additionalDirectories`** widens what counts as "inside the working directory" for the runtime's reversibility heuristics. A user who runs sessions from `~/projects/foo` but stores generated artifacts in `~/output` can add `~/output` here, and writes there will not trigger the external-write confirmation that would otherwise apply.
 
-A concrete example of how the layer behaves: when the model issues `Bash(git push --force origin main)`, the runtime evaluates deny rules first. The harness's `Bash(git push --force:*)` matches, the call returns a deny decision, and the model sees a "permission denied" response. The user is never prompted. The 93%-of-prompts-get-approved problem is bypassed because the prompt never appears.
+A concrete example of how the layer behaves: when the model issues `Bash(sudo apt-get install foo)`, the runtime evaluates deny rules first. The harness's `Bash(sudo:*)` matches, the call returns a deny decision, and the model sees a "permission denied" response. The user is never prompted. The 93%-of-prompts-get-approved problem is bypassed because the prompt never appears.
 
 The layer cannot enforce semantics that go beyond pattern matching. A deny rule cannot say "no destructive commands" without enumerating which prefixes count as destructive. A deny rule cannot inspect the runtime state of a file being written. it only sees the path. For semantic checks, the hook layer is the right tool.
 
 The deny-first evaluation order is the load-bearing detail. A broad deny always wins, so harnesses use the `mcpServers` allowlist (a structural mechanism in the settings file) to express "no MCP servers reach the model except these," rather than a blanket `mcp__*` deny rule that would block every server including allowed ones.
 
-**A worked example of a deny rule firing.** The user asks the model to clean up a stale branch. The model decides on `git push --force origin feature/old`. The runtime parses the tool call, sees the tool name `Bash` and the input `git push --force origin feature/old`, and evaluates deny rules. The Mac harness has `Bash(git push --force:*)` in the deny set. The runtime matches the literal prefix `git push --force` against the input, the `:*` glob matches `origin feature/old`, the rule fires, and the runtime returns a deny decision to the model. The model sees a structured "permission denied" response with the rule name, and the user is never prompted. The model can choose to either explain the failure to the user, attempt a different tool call, or abandon the operation. The user's attention has not been consumed. the deterministic enforcement has done its job.
+**A worked example of a deny rule firing.** The user asks the model to install a package system-wide. The model decides on `sudo apt-get install foo`. The runtime parses the tool call, sees the tool name `Bash` and the input `sudo apt-get install foo`, and evaluates deny rules. The Mac harness has `Bash(sudo:*)` in the deny set. The runtime matches the literal prefix `sudo` against the input, the `:*` glob matches `apt-get install foo`, the rule fires, and the runtime returns a deny decision to the model. The model sees a structured "permission denied" response with the rule name, and the user is never prompted. The model can choose to either explain the failure to the user, attempt a different tool call (e.g., user-level Homebrew without sudo), or abandon the operation. The user's attention has not been consumed. the deterministic enforcement has done its job.
 
 **What the layer cannot do.** A deny rule cannot inspect the content of a file being written, only the path. A deny rule cannot count subcommands inside a chained Bash invocation. A deny rule cannot compute a SHA-256 of a file at session start. For semantic checks of that kind, the hook layer is the right tool.
 
@@ -410,7 +410,7 @@ A summary table of when each extension type is the right tool:
 
 | Need | Right tool | Why |
 |---|---|---|
-| Block force-push | Deny rule | Pattern match catches the canonical forms. no semantic check needed |
+| Ask on force-push variants | PreToolUse hook | Per the 2026-05-12 narrowing, model-proposed force-push fires the hook and requires interactive confirmation. Deny was too strict for the operator's admin-bypass workflow on sole-contributor public repos. |
 | Audit in-repo config files at session start | SessionStart hook | Requires reading files and computing hashes. deny rule cannot do this |
 | Apply six-check process before MCP registration | Skill | Conversational scaffolding, not enforcement, only discipline |
 | Spawn a fresh-context audit at end of phase | Agent (subagent) | Separate context, verifiable output, parallelizable |
@@ -471,7 +471,7 @@ A summary table of the eighteen artifacts and their layers, useful as a referenc
 | 7 | `SessionStart-audit-claude-config.py` | Hook | T3 (pre-trust initialization) |
 | 8 | `Stop-prune-session-logs.py` | Hook (operational) | Disk-usage and privacy posture |
 | 9 | `bash-deny-dangerously-skip-permissions.md` | Permission | Principle 1 (model-proposed bypass) |
-| 10 | `bash-deny-git-push-force.md` | Permission | Asset 1 (source code integrity) |
+| 10 | `PreToolUse-git-push-force-ask.py` | Hook | Asset 1 (source code integrity) |
 | 11 | `bash-deny-rm-rf-root.md` | Permission | Principle 3 (reversibility) |
 | 12 | `bash-deny-sudo.md` | Permission | Principle 2 (least privilege) |
 | 13 | `filesystem-deny-write-secrets.md` | Permission | Asset 2 (secrets) |
@@ -506,7 +506,7 @@ Each section addresses what the deterministic layer cannot catch. The advisory l
 **What it produces.** Six top-level configuration blocks:
 
 - `permissions.defaultMode: "auto"`. The auto-mode ML classifier handles ambient approvals at the documented 0.4% false-positive rate (Hughes 2026, cited in `research/Claude_Architecture.md` §5.3).
-- `permissions.deny`: 17 deny patterns covering force-push, bypass mode, sudo, `rm -rf` against root paths, and write/edit against secret-file globs.
+- `permissions.deny`: 14 deny patterns covering bypass mode, sudo, `rm -rf` against root paths, and write/edit against secret-file globs. (The force-push patterns were converted from deny to hook-mediated ask in the 2026-05-12 post-launch revision. See §4.10.)
 - `hooks`: registrations for two PreToolUse Bash hooks (subcommand cap, supply-chain checks), two PreToolUse write hooks (external-write gate, cached-prefix gate), one SessionStart hook (config audit), and one Stop hook (log pruning).
 - `enabledPlugins`: `superpowers@claude-plugins-official` (14 skills + 1 SessionStart hook) and `mempalace@mempalace` (1 skill + MCP server with 39 tools).
 - `mcpServers`: empty by default. The structural mechanism per `mac/harness/rules/mcp-deny-server-prefix-default.md`.
@@ -520,9 +520,6 @@ Each section addresses what the deterministic layer cannot catch. The advisory l
 
 | Pattern | Tool | Threat | Rule file |
 |---|---|---|---|
-| `git push --force:*` | Bash | T-Asset 1 (source code integrity) | `bash-deny-git-push-force.md` |
-| `git push -f:*` | Bash | T-Asset 1 | `bash-deny-git-push-force.md` |
-| `git push --force-with-lease:*` | Bash | T-Asset 1 | `bash-deny-git-push-force.md` |
 | `claude --dangerously-skip-permissions:*` | Bash | Principle 1 | `bash-deny-dangerously-skip-permissions.md` |
 | `sudo:*` | Bash | Principle 2 | `bash-deny-sudo.md` |
 | `rm -rf /:*` | Bash | Principle 3 | `bash-deny-rm-rf-root.md` |
@@ -680,17 +677,23 @@ Each entry binds a SHA-256 hash to its audit metadata. The hook treats absence o
 
 **Citation.** `mac/harness/rules/bash-deny-dangerously-skip-permissions.md`. Phase 5 finding F02 in `phase-outputs/PHASE-5-AUDIT.md`. Phase 2 Q9 in `phase-outputs/ANSWERS.md` (narrowed 2026-05-11).
 
-### §4.10 bash-deny-git-push-force.md
+### §4.10 PreToolUse-git-push-force-ask.py
 
-**What it does.** Denies force-push variants.
+**What it does.** Asks for confirmation on model-proposed `git push --force`, `git push -f`, and `git push --force-with-lease` invocations. Originally a deny rule (`bash-deny-git-push-force.md`). Converted to a hook-mediated ask in the 2026-05-12 post-launch revision.
 
-**Patterns.** `Bash(git push --force:*)`, `Bash(git push -f:*)`, `Bash(git push --force-with-lease:*)`.
+**When it fires.** Every Bash tool call. Registered under `hooks.PreToolUse` with matcher `Bash`, alongside the subcommand-cap and supply-chain hooks.
 
-**What it blocks.** Three force-push forms. `--force-with-lease` is included because the lease check protects only against losing intermediate commits. an unauthorized push of new history still happens, and the asymmetry between local intent and remote outcome is the same.
+**What it produces.** When the command matches any of the three force-push patterns, the hook returns `permissionDecision: ask` with the reason "git push force variant detected. The harness asks for confirmation on model-proposed force-push to give the operator a chance to confirm intent (Principle 3 reversibility, foundation/01 Asset #1 source code integrity). The operator's terminal-direct invocations are out of scope. Confirm or deny."
 
-**Why it is calibrated this way.** Foundation Principle 3 (reversibility-weighted risk) and Asset #1 (source code integrity). A force-push overwrites remote history. Local branch protection can roll it back if reflog or backups exist, but the operation crosses a trust boundary into the shared GitHub remote, which the harness treats as out-of-band reversibility. Deny-and-let-Rock-override-on-demand is the correct cost for force-push: rare legitimate use, common dangerous use.
+The three patterns match `git push --force`, `git push --force-with-lease`, and `git push -f` as a token at the head of the command. The regex tolerates intermediate flags (e.g., `git push --quiet --force origin main`).
 
-**Citation.** `mac/harness/rules/bash-deny-git-push-force.md`. Foundation Principle 3 in `foundation/02-architectural-principles.md`.
+**Why it is calibrated this way.** Foundation Principle 3 (reversibility-weighted risk) and Asset #1 (source code integrity). A force-push overwrites remote history. The original posture (Phase 3, 2026-05-11) was outright deny on all three variants because force-push's legitimate use is narrow and the dangerous cases are silent. The 2026-05-12 narrowing converted the deny to hook-mediated ask because the operator's actual workflow includes admin-bypass pushes (`git push --force` to main with branch protection bypassed) on sole-contributor public repos where no reviewer is available. Hook-mediated ask preserves the deterministic enforcement (the hook always fires) while giving the operator interactive control over each invocation.
+
+The conversion is structurally similar to the Q9 narrowing (2026-05-11) on `--dangerously-skip-permissions`. Operator-initiated force-push from the terminal is out of scope. The hook fires on tool calls the model proposes during a session.
+
+`--force-with-lease` is included alongside `--force` and `-f` because the lease check protects only against losing intermediate commits. An unauthorized push of new history still happens, and the asymmetry between local intent and remote outcome is the same. The operator gets asked on all three.
+
+**Citation.** `mac/harness/hooks/PreToolUse-git-push-force-ask.py`. Foundation Principle 3 in `foundation/02-architectural-principles.md`. Post-launch revision 2026-05-12. Originally Phase 3 bash-deny-git-push-force.md (deleted).
 
 ### §4.11 bash-deny-rm-rf-root.md
 

@@ -1485,6 +1485,22 @@ Format-consistency decision (Rock surfaced). The .ipynb format split the documen
 
 Verification commands preserved as copy-paste references in §9.
 
+### 2026-05-12: force-push deny rule narrowed to hook-mediated ask
+
+The `bash-deny-git-push-force.md` deny rule (Phase 3, 2026-05-11) was converted to a new PreToolUse hook `PreToolUse-git-push-force-ask.py`. The three patterns (`git push --force`, `git push -f`, `git push --force-with-lease`) now ask for confirmation rather than block outright.
+
+Trigger. Operator-question on a workflow gap: the original deny rule blocked all three force-push variants, but the operator's daily-driver workflow includes admin-bypass force-pushes on sole-contributor public repos (where branch protection requires PRs that no reviewer exists for). The deny rule produced friction that did not match the actual security boundary the operator wanted (the boundary is "ask me to confirm each force-push," not "always block").
+
+Decision. Convert deny to hook-mediated ask. The deterministic floor is preserved through hook-mediated ask: every model-proposed force-push invocation fires the hook and gets an interactive prompt. The operator confirms per invocation rather than removing the rule for the session.
+
+Structurally similar to the Q9 narrowing (2026-05-11) on `--dangerously-skip-permissions`. Operator-terminal invocations are out of scope.
+
+Five-file change in the in-repo source of truth: delete `mac/harness/rules/bash-deny-git-push-force.md`, create `mac/harness/hooks/PreToolUse-git-push-force-ask.py`, update `mac/harness/settings.json` (remove three deny patterns, register hook), update `mac/ARCHITECTURE.md` (renumber rules and hooks counts), update HARNESS_GUIDE.md and USER_GUIDE.md to reflect the new mechanism.
+
+User-level sync (~/.claude/) lands as a separate commit in the private repo.
+
+Generalizable lesson. A deny rule that produces friction misaligned with the operator's actual security boundary is a calibration miss. The fix is to narrow the rule's strictness while preserving its determinism. Hook-mediated ask is the discipline-preserving alternative to outright deny when the operator wants to confirm rather than block.
+
 ### Future revisions
 
 Land here as they happen.

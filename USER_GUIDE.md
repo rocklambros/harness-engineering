@@ -33,7 +33,7 @@ This is the reference card. Every component listed here corresponds to a real fi
 | Component | Kind | When it acts | What it does |
 |---|---|---|---|
 | `bash-deny-dangerously-skip-permissions` | Deny rule | Model-proposed `Bash(claude --dangerously-skip-permissions:*)` | Blocks. Operator-initiated bypass at session start is out of scope (narrowed Q9). |
-| `bash-deny-git-push-force` | Deny rule | `git push --force`, `git push -f`, `git push --force-with-lease` | Blocks all three patterns. |
+| `PreToolUse-git-push-force-ask.py` | Hook | `git push --force`, `git push -f`, `git push --force-with-lease` | Asks confirmation per the 2026-05-12 revision (was deny). Operator-terminal invocations are out of scope. |
 | `bash-deny-rm-rf-root` | Deny rule | `rm -rf /...`, `rm -rf ~/...`, `rm -rf $HOME...` | Blocks. Scoped `rm -rf ./build` passes. |
 | `bash-deny-sudo` | Deny rule | Any Bash command starting with `sudo` | Blocks. The harness has no legitimate sudo path. |
 | `filesystem-deny-write-secrets` | Deny rule | Write or Edit to `.env`, `.env.*`, `secrets/**`, `.secrets/**`, `credentials.json` | Blocks. Glob dialect verification is open (F11). |
@@ -75,7 +75,7 @@ The source of truth for every claim in this section is the file under `mac/harne
 
 Deny rules live in `mac/harness/settings.json` under `permissions.deny`. Claude Code evaluates them before any prompt reaches you. A matched rule blocks the call and returns to the model. The user-visible behavior is "the operation did not happen."
 
-There are six deny rules.
+There are five deny rules (was six until the 2026-05-12 revision converted `bash-deny-git-push-force` to a hook-mediated ask, see §2.2 below).
 
 #### bash-deny-dangerously-skip-permissions
 
@@ -93,23 +93,9 @@ There are six deny rules.
 
 **File.** `mac/harness/rules/bash-deny-dangerously-skip-permissions.md`.
 
-#### bash-deny-git-push-force
+#### git push force variants (now hook-mediated, see §2.2)
 
-**Pattern.** Three deny entries:
-
-```
-Bash(git push --force:*)
-Bash(git push -f:*)
-Bash(git push --force-with-lease:*)
-```
-
-**What triggers it.** A Bash invocation matching any of the three forms. All three are blocked. `--force-with-lease` is included because the lease check protects only against losing intermediate commits. An unauthorized push of new history still happens, and the asymmetry between local intent and remote outcome is the same.
-
-**What you see.** Blocked. The model reports the deny and does not push.
-
-**Workaround for legitimate use.** Ask the human (you, at the keyboard) to run the force-push manually outside Claude Code, or remove the deny rule for the session. Removing for one session means editing `~/.claude/settings.json` to drop the three lines, restarting the session, doing the push, restoring the lines. Friction is the point.
-
-**File.** `mac/harness/rules/bash-deny-git-push-force.md`.
+Originally `bash-deny-git-push-force` (a deny rule). The 2026-05-12 post-launch revision converted the three force-push patterns from outright deny to hook-mediated ask. The new component is `PreToolUse-git-push-force-ask.py` documented in §2.2 below. When the model proposes `git push --force`, `git push -f`, or `git push --force-with-lease`, the hook fires and asks you to confirm. Operator-initiated force-push from your terminal is out of scope. The hook only fires on model-proposed tool calls during a Claude Code session.
 
 #### bash-deny-rm-rf-root
 
@@ -190,7 +176,7 @@ Edit(**/credentials.json)
 
 Hooks live as Python scripts in `mac/harness/hooks/`. Claude Code runs each hook before the tool call executes, passes the tool input on stdin, reads the hook's stdout, and applies the `permissionDecision` field. Three decisions are possible: pass (silent), ask (interactive prompt), deny (block with stderr).
 
-There are four PreToolUse hooks. Two attach to Bash. Two attach to Write, Edit, MultiEdit, and NotebookEdit.
+There are five PreToolUse hooks. Three attach to Bash (subcommand cap, supply-chain checks, force-push ask). Two attach to Write, Edit, MultiEdit, and NotebookEdit (external-write gate, cached-prefix gate).
 
 #### PreToolUse-bash-cap-subcommands.py
 
@@ -299,6 +285,37 @@ The `<label>` field names the specific pattern that matched (e.g., "npx -y with 
 **Workaround.** Pin the version. If the pin is genuinely unavailable (e.g., cloning a private install script), save the script to disk first, review it, then run it from disk.
 
 **File.** `mac/harness/hooks/PreToolUse-supply-chain-bash-checks.py`.
+
+#### PreToolUse-git-push-force-ask.py
+
+**Event.** PreToolUse with matcher `Bash`.
+
+**What it inspects.** The `command` field of the tool input. The hook matches three patterns at the head of the command: `git push --force`, `git push -f`, and `git push --force-with-lease`. The regex tolerates intermediate flags (e.g., `git push --quiet --force origin main`).
+
+**What you see when the hook asks.** A confirmation prompt with the hook's reason text:
+
+> git push force variant detected. The harness asks for confirmation on model-proposed force-push to give the operator a chance to confirm intent (Principle 3 reversibility, foundation/01 Asset #1 source code integrity). The operator's terminal-direct invocations are out of scope. Confirm or deny.
+
+**Examples that trigger an ask.**
+
+- `git push --force origin main`
+- `git push -f origin feature/x`
+- `git push --force-with-lease origin main`
+- `git push --quiet --force origin main` (intermediate flag tolerated)
+
+**Examples that pass silently.**
+
+- `git push origin main` (no force variant)
+- `git push --tags origin main`
+- `git status` (different command)
+
+**History.** Originally the deny rule `bash-deny-git-push-force.md` (Phase 3, 2026-05-11). Converted to hook-mediated ask in the 2026-05-12 post-launch revision because the operator's daily-driver workflow includes admin-bypass force-pushes on sole-contributor public repos. Hook-mediated ask preserves the deterministic enforcement (the hook always fires on the three patterns) while giving the operator interactive control over each invocation.
+
+**Operator-initiated force-push (out of scope).** When you run `git push --force` directly in your terminal (outside Claude Code), this hook does not fire. The terminal is not governed by the harness. The hook fires on tool calls the model proposes during a session.
+
+**Workaround.** Confirm the prompt when the force-push is intentional. For high-frequency scripted force-pushes, run them from your terminal directly rather than through the Claude Code session.
+
+**File.** `mac/harness/hooks/PreToolUse-git-push-force-ask.py`.
 
 #### Sequence: what happens when you run a Bash command
 
@@ -621,9 +638,9 @@ This is the reference table. You have a specific command in mind and want to kno
 | `git log` | Pass silently | Read-only |
 | `git commit -m "..."` | Pass (auto-mode approves writing inside cwd) | Write to .git inside cwd |
 | `git push` | Pass | No deny match, no hook ask |
-| `git push --force` | Blocked | Deny rule `bash-deny-git-push-force` |
-| `git push -f origin main` | Blocked | Same deny rule |
-| `git push --force-with-lease origin main` | Blocked | Same deny rule (all three force forms denied) |
+| `git push --force` | Ask (force-push hook) | `PreToolUse-git-push-force-ask.py` (2026-05-12 revision, was deny) |
+| `git push -f origin main` | Ask | Same hook |
+| `git push --force-with-lease origin main` | Ask | Same hook (all three force forms asked) |
 | `sudo apt update` | Blocked | Deny rule `bash-deny-sudo` |
 | `sudo -E env` | Blocked | Same deny rule |
 | `rm -rf ./build` | Pass (auto-mode approves) | Scoped path inside cwd |
@@ -1096,9 +1113,9 @@ Compare against the entries in `~/.claude/audited-hashes.json`. If absent, add i
 
 ### "I want to do a legitimate force push"
 
-The deny rule blocks all three force-push forms (`--force`, `-f`, `--force-with-lease`). The harness treats force-push as out-of-band reversibility regardless of the lease check.
+Per the 2026-05-12 revision, all three force-push forms (`--force`, `-f`, `--force-with-lease`) fire the `PreToolUse-git-push-force-ask.py` hook and ask for confirmation. Confirm to proceed.
 
-Three options:
+If you prefer to run force-push without the prompt (e.g., during scripted admin-bypass workflows on sole-contributor public repos):
 
 - Run the force push manually outside Claude Code, in a separate terminal you control.
 - Remove the three deny lines from `~/.claude/settings.json` for the session, do the push, restore the lines.

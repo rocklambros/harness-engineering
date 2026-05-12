@@ -54,18 +54,18 @@ Per Claude_Architecture.md §6.2, `getAllBaseTools()` returns up to 54 tools; th
 The deny-first, ask-by-default permission system from Claude_Architecture.md §5 lands here. Phase 2 elected the auto-mode classifier (Q1); Phase 3 wrote the deterministic floor under it.
 
 - **Permission mode default**: `auto`. The classifier handles ambient cases; the deny rules below catch the rest.
-- **Deny rules (6, in `mac/harness/rules/`)**:
-  - `bash-deny-git-push-force.md` — `git push --force`, `-f`, `--force-with-lease`. Principle 3 (reversibility) and Asset #1 (source code integrity).
+- **Deny rules (5, in `mac/harness/rules/`)**:
   - `bash-deny-dangerously-skip-permissions.md` — model-proposed bypass-mode invocations. Principle 1 (hooks enforce) and Q9 (narrowed 2026-05-11: operator-initiated bypass at session start is permitted; `skipDangerousModePermissionPrompt: true` in `~/.claude/settings.json` is the documented expected state for that case).
   - `bash-deny-sudo.md` — root execution. Principle 2 (least privilege).
   - `bash-deny-rm-rf-root.md` — `rm -rf /`, `~/`, `$HOME`, `/Users/`. Principle 3 (reversibility).
   - `filesystem-deny-write-secrets.md` — Write/Edit to `.env`, `secrets/`, `credentials.json`. Asset #2 (secrets).
   - `mcp-deny-server-prefix-default.md` — no pattern; documents the structural mechanism (empty `mcpServers` + Phase 4 entries = no unlisted server reaches the pool). Threat actors #6.
-- **Hooks (6, in `mac/harness/hooks/`, all Python)**:
+- **Hooks (7, in `mac/harness/hooks/`, all Python)**:
   - `PreToolUse-bash-cap-subcommands.py` — denies Bash chains over 30 subcommands. Phase 2 Q6, defense in depth below the Adversa.ai 2026 documented 50 threshold.
   - `PreToolUse-external-write-gate.py` — asks confirmation on Write/Edit/MultiEdit/NotebookEdit outside cwd. Principle 3.
   - `PreToolUse-supply-chain-bash-checks.py` — asks on `npx -y`, `uvx --from git+` without ref, `@latest`, unpinned `pip install`, `curl|sh`. Phase 2 Q2a T2.
   - `PreToolUse-cached-prefix-write-gate.py` — asks on writes to CLAUDE.md hierarchy, `foundation/`, user-level @import targets. Phase 2 Q2a T5 (implemented as PreToolUse rather than PostToolUse because the intent is gating).
+  - `PreToolUse-git-push-force-ask.py` — asks confirmation on `git push --force`, `-f`, `--force-with-lease`. Post-launch revision 2026-05-12 (converted from the original `bash-deny-git-push-force.md` deny rule to hook-mediated ask per operator's daily-driver workflow needing admin-bypass force-pushes to public repos with branch protection). Principle 3 (reversibility) and Asset #1 (source code integrity).
   - `SessionStart-audit-claude-config.py` — blocks session if in-repo `.claude/settings.json` / `.claude/settings.local.json` / `.mcp.json` has sha256 absent from `~/.claude/audited-hashes.json`. Phase 2 Q2b T3 + Q5 every-clone cadence.
   - `Stop-prune-session-logs.py` — deletes `~/.claude/projects/*.jsonl` older than 90 days with 24h marker guard. Phase 2 Q11.
 - **MCP server-prefix denies**: managed structurally via `mcpServers` allowlist rather than a blanket deny pattern (deny-first ordering would override Phase 4 allows). See `mac/harness/rules/mcp-deny-server-prefix-default.md` for the design.
