@@ -2,7 +2,7 @@
 
 ## Operational preconditions (read before invoking)
 
-Open a fresh Claude Code session. Run from `/Users/klambros/harness-engineering/` as the working directory. This is the first of four closeout prompts (06 README, 07 HARNESS_GUIDE, 08 JOURNEY, 09 build-closeout). Run them in order; each is a separate session.
+Open a fresh Claude Code session. Run from `/Users/klambros/harness-engineering/` as the working directory. This is the first of five closeout prompts (06 README, 07 USER_GUIDE, 08 HARNESS_GUIDE, 09 JOURNEY, 10 build-closeout). Run them in order; each is a separate session.
 
 This prompt includes a one-time on-disk verification of the rebuilt `~/.claude/` from Operation 4. Subsequent closeout prompts assume that verification has passed and do not repeat it.
 
@@ -39,7 +39,7 @@ Do not modify any other file.
 
 ### Stage 0: Verify rebuilt `~/.claude/` on-disk state
 
-This verification runs once across the closeout sequence. Subsequent prompts (07, 08, 09) assume it has passed.
+This verification runs once across the closeout sequence. Subsequent prompts (07, 08, 09, 10) assume it has passed.
 
 Run these checks and record results in `phase-outputs/POST-MAC-6-NOTES.md` under §On-disk verification:
 
@@ -54,7 +54,7 @@ If any check fails, stop and surface to Rock. The README should not claim a stat
 
 ### Stage 1: Rewrite README.md
 
-Target length: 180-250 lines. Structure, in order:
+Target length: 180-280 lines. Structure, in order:
 
 **Heading and one-paragraph what-this-is.** What this repo contains in two sentences. Frame it as a reference, not a clone-and-run template. Name the three platforms (Mac, Jetson AGX Orin, Windows) and the current validation state (Mac validated and operating, Jetson and Windows scaffolded with Mac cross-pollination applied). One sentence on what "harness engineering" means as a discipline.
 
@@ -68,32 +68,48 @@ Be honest that this is not a turnkey product. The locked decision is "personal-s
 
 **The Quality Contract in two sentences.** Name the five properties (QC.1 Security, QC.2 Tight code, QC.3 Comment the why, QC.4a Cache discipline, QC.4b Context window discipline, QC.5 Versioning) and what they collectively enforce. Point to `foundation/00-quality-contract.md` for detail.
 
-**Where to read next.** This is the most important section. A small table or short prose map showing which document answers which reader question:
+**The documentation set.** This is the most important section. A short prose map or small table showing which document answers which reader question:
 
-- "What is a Claude Code harness and how does this one work?" → `HARNESS_GUIDE.md`
-- "Why did the author build it this way?" → `JOURNEY.ipynb`
+- "I just want to use this harness on my machine. What fires when?" → `USER_GUIDE.md`
+- "How is the harness designed and why?" → `HARNESS_GUIDE.md`
+- "How did you build it and what did you learn?" → `JOURNEY.md`
 - "What are the design principles?" → `foundation/`
-- "What does the Mac-specific harness look like?" → `mac/`
+- "What does the Mac-specific build look like?" → `mac/`
 - "What's the underlying research?" → `research/`
 - "How was the build sequenced?" → `operations/`
 
-**Quick start.** Three or four steps for a reader who wants to evaluate using this harness on their own machine. Clone the repo. Read README, then HARNESS_GUIDE, then the relevant platform README, then JOURNEY for context. Adapt rather than copy. Do not symlink `mac/harness/` over the reader's `~/.claude/` without first going through HARNESS_GUIDE's adaptation section.
+**Quick start.** Three or four steps for a reader who wants to use this harness on their own machine. Clone the repo. Read README, then USER_GUIDE for day-to-day behavior, then HARNESS_GUIDE for design context, then the relevant platform README. Adapt rather than copy. Do not symlink `mac/harness/` over the reader's `~/.claude/` without first going through HARNESS_GUIDE's extension and adaptation guidance.
 
 **What this repo is not.** One short paragraph. Not a CLI tool. Not a product. Not seeking PRs that change locked decisions. Personal-specific is the value; reading it teaches a discipline, copying it wholesale does not.
 
 **License, security, contact.** Brief. MIT, link to SECURITY.md for vulnerability reporting, repo URL.
+
+**Optional diagram.** If the doc set's relationship is easier to grasp visually than as a prose table, include one small mermaid flowchart showing the four-document reading path. Skip if a prose table already serves the reader well.
+
+```mermaid
+flowchart LR
+  README[README.md<br/>front door]
+  USER[USER_GUIDE.md<br/>what fires when]
+  HARNESS[HARNESS_GUIDE.md<br/>design and why]
+  JOURNEY[JOURNEY.md<br/>build story]
+  README --> USER
+  README --> HARNESS
+  README --> JOURNEY
+```
+
+The diagram, if included, replaces the prose "Where to read next" section, not duplicates it.
 
 <investigate_before_answering>
 Before claiming "Mac validated and operating," verify Stage 0's checks all passed. The README is a public claim; it should not advertise a state that doesn't match reality.
 
 Before claiming "Jetson and Windows scaffolded with Mac cross-pollination applied," verify `phase-outputs/POST-MAC-3-NOTES.md` records the cross-pollination as complete. If Operation 3 outputs are absent, soften the claim to "scaffolded, cross-pollination in progress."
 
-Before linking to a document path, verify the path exists. Broken links in the front door are the worst kind of broken.
+Before linking to a document path, verify the path exists. Broken links in the front door are the worst kind of broken. If `USER_GUIDE.md`, `HARNESS_GUIDE.md`, or `JOURNEY.md` does not yet exist (Operations 07, 08, 09 haven't run), still link to them; the closeout sequence ensures they land before the README commit reaches readers. Note this in `phase-outputs/POST-MAC-6-NOTES.md`.
 </investigate_before_answering>
 
 ## Deliverables
 
-- `README.md`: rewritten at 180-250 lines per the structure above
+- `README.md`: rewritten at 180-280 lines per the structure above
 - `phase-outputs/POST-MAC-6-CONTEXT.md`: context-budget record
 - `phase-outputs/POST-MAC-6-NOTES.md`: authoring decisions and on-disk verification results
 
@@ -101,12 +117,13 @@ Before linking to a document path, verify the path exists. Broken links in the f
 
 Before reporting complete:
 
-- `wc -l README.md` returns 180-250.
-- Every link in README resolves to an existing file or section.
+- `wc -l README.md` returns 180-280.
+- Every link in README resolves to an existing file or section, OR points to a closeout-sequence document that lands in a subsequent operation (note these in NOTES).
 - README contains no em dashes, no semicolons, no sentences starting with And/But/Or/So/Nor (grep for those at line start).
 - README contains no items from the AI-filler banned list (just, very, really, actually, basically, literally, in conclusion, it's worth noting).
 - README's "Mac validated" claim is consistent with Stage 0's on-disk verification.
 - `bash scripts/drift-check.sh` returns 0 or WARN. README does not add to cached prefix.
+- If a mermaid block is included, the block parses (test the markdown preview on GitHub or via `mmdc` if mermaid-cli is available).
 
 Report line count, link count, and any drift between claims and verification results.
 
@@ -115,25 +132,27 @@ Report line count, link count, and any drift between claims and verification res
 ```
 docs: rewrite README.md as repo front door
 
-Context: Mac build complete and ~/.claude/ rebuild executed. Public-facing documentation set being landed via Operations 06 through 09. README is the first artifact in that set.
+Context: Mac build complete and ~/.claude/ rebuild executed. Public-facing documentation set being landed via Operations 06 through 10. README is the first artifact in that set.
 
-Decision: 180-250 line front door. Signposts to HARNESS_GUIDE (how it works), JOURNEY (why I built it this way), foundation/ (principles), platform READMEs, research/, operations/.
+Decision: 180-280 line front door. Signposts to USER_GUIDE (day-to-day behavior), HARNESS_GUIDE (design), JOURNEY (build story), foundation/, platform READMEs, research/, operations/.
 
-Why: The Batch 1 README served the build phase. Now that the documentation set is taking shape, the front door needs to do front-door work: name what this is, name who it's for, point readers to the right next document.
+Why: The Batch 1 README served the build phase. Now that the documentation set is taking shape, the front door needs to do front-door work: name what this is, name who it's for, point readers to the right next document for what they actually want to know.
 
-Tradeoff: Length traded against signposting. A 500-line README would carry more detail but would compete with HARNESS_GUIDE for the same teaching job. Cleaner separation: README answers "what is this," HARNESS_GUIDE answers "how does it work."
+Tradeoff: Length traded against signposting. A 500-line README would carry more detail but would compete with USER_GUIDE and HARNESS_GUIDE for the same teaching job. Cleaner separation: README answers "what is this," USER_GUIDE answers "how do I use it," HARNESS_GUIDE answers "how is it designed."
 ```
 
 Commit. Push.
 
 ## Anti-overengineering
 
-The README is a signposting document, not a teaching document. Do not duplicate content that belongs in HARNESS_GUIDE or JOURNEY. If a paragraph starts to explain how a hook works or why a specific decision was made, it belongs elsewhere.
+The README is a signposting document, not a teaching document. Do not duplicate content that belongs in USER_GUIDE, HARNESS_GUIDE, or JOURNEY. If a paragraph starts to explain how a hook works or why a specific decision was made, it belongs elsewhere.
 
 Do not relitigate locked decisions. The locked decisions are settled. The README reflects them; it does not argue for them.
 
-Do not add a Table of Contents to the README. At 180-250 lines, the structure is its own navigation.
+Do not add a Table of Contents to the README. At 180-280 lines, the structure is its own navigation.
 
 Do not add badges, shields, or other GitHub ornamentation unless they convey actual information (e.g., CI status if CI exists). Decorative badges are clutter.
 
-If you cannot fit something inside the 180-250 line budget, the something belongs in a different document. The budget is the discipline.
+If you cannot fit something inside the 180-280 line budget, the something belongs in a different document. The budget is the discipline.
+
+Do not include a mermaid diagram for the sake of including one. The doc-set table is prose-clear at four documents. The diagram is optional and earns its place only by replacing prose, not augmenting it. If included, no decorative styling, no emoji, no color beyond what conveys information.
