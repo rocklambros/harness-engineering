@@ -463,7 +463,11 @@ Review each file's contents before continuing. To audit, add the hash to /Users/
 
 The exit-2 blocking semantics depend on the Claude Code version (F09 in PHASE-5-AUDIT). The `additionalContext` is the durable defense regardless: the model receives the audit message even if exit-2 does not block the session.
 
-**How to acknowledge.** Open `~/.claude/audited-hashes.json` (create it as `{}` if it does not exist), add a key with the sha256 from the stderr message, and fill the registry fields:
+**How to acknowledge: the fast path.** Run `bash /Users/klambros/harness-engineering/scripts/audit-claude-config.sh` from the cloned repo's root. The script walks the working directory for `.claude/settings.json`, `.claude/settings.local.json`, and `.mcp.json`, computes sha256 of each, prompts you for an audit note per new entry, and appends to the registry. Supports `--auto-note "<note>"` to skip per-file prompts. Supports `--dry-run` to review changes before writing.
+
+The CLI is the 2026-05-12 post-launch revision that resolves the Phase 4 deferred "bulk-acknowledge tool" item. It does not change the hook's posture (still every-clone hash-gated per Q5). It cuts the per-edit friction to one command rather than manual JSON manipulation.
+
+**How to acknowledge: the manual path.** If you prefer to inspect and edit the registry by hand, open `~/.claude/audited-hashes.json` (create it as `{}` if it does not exist), add a key with the sha256 from the stderr message, and fill the registry fields:
 
 ```json
 {
@@ -478,7 +482,7 @@ The exit-2 blocking semantics depend on the Claude Code version (F09 in PHASE-5-
 
 Restart the Claude Code session in that directory. The hook re-checks against the registry and proceeds.
 
-**Bulk acknowledge.** Phase 1 surfaced 44 in-repo `.claude/` directories on the daily-driver Mac. The post-Phase-5 operational steps include a bulk-acknowledge tool that walks the filesystem and adds each detected hash to the registry interactively. Until that tool ships in your environment, manual registry edits are the path.
+**Bulk acknowledge.** Phase 1 surfaced 44 in-repo `.claude/` directories on the daily-driver Mac. The 2026-05-12 post-launch revision ships `scripts/audit-claude-config.sh` for this. Run it from each repo's root (or scripted across all 44) with `--auto-note "Initial bulk acknowledge from Phase 1 inventory"` to populate the registry without per-file prompts. The script's dry-run mode (`--dry-run`) is useful for inspecting the change set before writing.
 
 **Workaround for false positives.** None expected. The hook fires on real file presence. If the file is unaudited, it should be audited. The audit is the workflow, not the workaround.
 

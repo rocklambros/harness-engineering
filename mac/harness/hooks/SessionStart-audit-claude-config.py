@@ -28,8 +28,11 @@ Registry format:
     }
 
 The 44 in-repo .claude/ directories Phase 1 surveyed need bulk acknowledgment.
-Phase 5 produces the CLI for that bulk-acknowledge workflow; until then,
-manual registry edits are the path.
+scripts/audit-claude-config.sh (post-launch revision 2026-05-12) is the CLI
+for that workflow. It walks cwd, computes hashes, prompts for audit notes,
+and appends to the registry. Run with --auto-note for scripted bulk
+additions. Manual registry edits remain available for inspection-heavy
+cases.
 
 Verify (no candidates, exit 0):
     echo '{"cwd":"/tmp/empty-test-dir","session_id":"test"}' | \

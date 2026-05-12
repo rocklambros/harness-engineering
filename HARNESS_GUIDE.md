@@ -625,7 +625,7 @@ The two-step regex+function pattern in the implementation comes from the F04/F05
 
 **Why it is calibrated this way.** Threat actor #3 in `foundation/01-threat-model.md` is the pre-trust initialization class (CVE-2025-59536, CVSS 8.7, and CVE-2026-21852, CVSS 5.3). Code in `.claude/settings.json` and `.mcp.json` executes during project initialization before the trust dialog appears. The hook closes that gap with a hash gate. Phase 2 Q2b elected the T3 hook. Phase 2 Q5 picked the every-clone hash-gated cadence: every change to a candidate file requires re-audit. Phase 5 audit F09 documented that SessionStart exit-2 semantics are version-dependent (the source documents the convention for PreToolUse but not explicitly for SessionStart). the dual stdout + stderr + exit code pattern hedges across runtime versions.
 
-**Citation.** `mac/harness/hooks/SessionStart-audit-claude-config.py` header lines 4-32. Phase 5 finding F09 in `phase-outputs/PHASE-5-AUDIT.md`. The 44 in-repo `.claude/` directories that Phase 1 surveyed need bulk acknowledgment via a separate operational tool. the registry edit workflow is documented in the hook header.
+**Citation.** `mac/harness/hooks/SessionStart-audit-claude-config.py` header lines 4-32. Phase 5 finding F09 in `phase-outputs/PHASE-5-AUDIT.md`. The 44 in-repo `.claude/` directories that Phase 1 surveyed need bulk acknowledgment via `scripts/audit-claude-config.sh` (post-launch revision 2026-05-12). The CLI walks the working directory for candidate files, prompts for audit notes, and appends to the registry. The registry edit workflow is documented in the hook header for manual cases.
 
 **Registry format.** The hash registry at `~/.claude/audited-hashes.json` is JSON:
 
@@ -1207,7 +1207,7 @@ Each threat has one primary mitigation. composition across threats is covered in
 
 **Residual risk.** F09 in the Phase 5 audit documented that SessionStart exit-2 semantics are version-dependent. The `additionalContext` is the durable defense. A future Claude Code minor bump may change the exit-code handling. the hook's design is hedged across that uncertainty.
 
-**Bulk acknowledgment for legacy clones.** Phase 1 inventory surveyed 44 in-repo `.claude/` directories on Rock's machine. The SessionStart audit, applied retroactively, would block sessions against every one of those repositories until each was acknowledged. The post-launch operational tool (a CLI that walks the file tree, computes hashes, and writes the registry) handles the bulk addition. The tool is a separate operational deliverable, not a hook itself. the hook reads the registry and the tool writes it. The two compose without coupling.
+**Bulk acknowledgment for legacy clones.** Phase 1 inventory surveyed 44 in-repo `.claude/` directories on Rock's machine. The SessionStart audit, applied retroactively, would block sessions against every one of those repositories until each was acknowledged. The 2026-05-12 post-launch revision ships `scripts/audit-claude-config.sh` for this purpose: a CLI that walks the cwd for candidate files, computes hashes, prompts for audit notes, and appends to the registry. The CLI supports `--auto-note` for scripted bulk additions and `--dry-run` for review-before-write. The tool is a separate operational deliverable, not a hook itself. The hook reads the registry, the CLI writes it, and the two compose without coupling.
 
 ### §7.4 T4 Sub-command chain bypass
 

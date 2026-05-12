@@ -1485,6 +1485,18 @@ Format-consistency decision (Rock surfaced). The .ipynb format split the documen
 
 Verification commands preserved as copy-paste references in §9.
 
+### 2026-05-12: audit-helper CLI lands
+
+`scripts/audit-claude-config.sh`. Walks the current directory for `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`. Computes sha256. Prompts for audit note per new entry (or accepts `--auto-note` for scripted bulk additions). Appends to `~/.claude/audited-hashes.json`. Supports `--dry-run`.
+
+Trigger. Operator-question on a workflow gap. Every self-edit to a `.claude/` config in any repo changes the file's sha256. The next session is blocked until the new hash gets added to the registry. The Phase 2 Q5 cadence (every-clone, hash-gated) was deliberately strict. The Phase 4 notes had flagged "bulk-acknowledge tool" as a known gap that was never built. The friction shape (manual JSON manipulation per edit) was operationally expensive.
+
+Decision. Build the CLI. Preserve the hook's posture (still every-clone hash-gated per Q5). Cut the per-edit friction to one command. The 44 in-repo `.claude/` directories Phase 1 surveyed get a scripted bulk-add path via `--auto-note`.
+
+The hook's behavior is unchanged. The CLI is purely a workflow tool for the operator. The hook reads the registry. The CLI writes it. The two compose without coupling.
+
+Generalizable lesson. When a security posture is correct but the workflow is expensive, the right fix is a CLI helper, not posture change. The discipline (every change requires explicit acknowledgment) is preserved. The friction (manual JSON edit per change) is removed.
+
 ### 2026-05-12: force-push deny rule narrowed to hook-mediated ask
 
 The `bash-deny-git-push-force.md` deny rule (Phase 3, 2026-05-11) was converted to a new PreToolUse hook `PreToolUse-git-push-force-ask.py`. The three patterns (`git push --force`, `git push -f`, `git push --force-with-lease`) now ask for confirmation rather than block outright.
