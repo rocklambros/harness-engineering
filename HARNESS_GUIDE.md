@@ -1,26 +1,10 @@
 # HARNESS_GUIDE.md
 
-A user manual for the Claude Code harness in this repository. The reader is assumed to be a sharp engineer who has not used Claude Code before. The goal is to leave that reader with three things: a working mental model of what a harness is, a clear picture of what this specific harness does, and enough structure to build or adapt one of their own.
+The architectural reference for the Claude Code harness in this repository. The reader is assumed to be a sharp engineer who has either read `USER_GUIDE.md` or has the harness loaded and knows its operational surface. This guide answers a different question: how is the harness designed, why does each piece exist, what threat does each address, and how does it fit into the discipline of harness engineering.
 
-The document is read by need. Sections §1 through §3 build the conceptual model and read in order. Section §4 is the file-by-file reference. Sections §5 through §10 are practical and read by topic. Section §11 is a glossary that cross-references back to the sections that use each term.
+The document is read by need. Sections §1 through §3 build the conceptual model and read in order. Section §4 is the file-by-file design rationale. Sections §5 through §9 are practical and read by topic. Section §10 is a glossary that cross-references back to the sections that use each term.
 
-## §0. How to read this document
-
-The fastest path through the document depends on what the reader already knows.
-
-**A reader who has never used Claude Code.** Start at §1 and read in order through §3. The first three sections build the mental model: what Claude Code is, what a harness is, and what the five layers of a harness do. After §3, the reader can either continue to §4 for the file-by-file reference, or skip to §5 (use) and §6 (extend) to see what acting on the model looks like. Return to §4 by need when a specific artifact comes up.
-
-**A reader who has used Claude Code but never thought about hardening it.** Skim §1 for the harness definition, then read §2 (why) carefully. The discipline that motivates the harness is the load-bearing context for everything that follows. From there, §3 builds the layer model. §7 and §8 walk the QC and threat model in practice. §9 covers the operational discipline.
-
-**A reader who is building their own harness.** Read §3 in detail. Read §5 for the adapt-don't-copy posture. Read §6 for the extension templates. Use §4 as reference for the patterns the Mac build follows. Use §7 as the quality bar to hold the fork against.
-
-**A reader auditing this harness.** Read §1.2 and §1.3 for the runtime/harness distinction. Skim §3. Read §4 in full as the artifact reference. Read §7 and §8 as the quality and threat audits. Read §10 for the deliberate scope limits.
-
-**A reader who came here for one specific question.** Use §11 (the glossary) to find the right section, follow the cross-reference, and stop there.
-
-The document is roughly two thousand lines. Reading it linearly takes 60-90 minutes. Reading by need takes whatever the question takes.
-
----
+For operational behavior (what messages fire, what to type when), read `USER_GUIDE.md`. For the build narrative (what was tried, what surprised, what would change), read `JOURNEY.md`. For the platform-agnostic thinking (Quality Contract, threat model, principles), read `foundation/`. This guide is structural and explanatory.
 
 ## §1. What is a Claude Code harness
 
@@ -78,7 +62,7 @@ The harness is also the place where security and quality decisions live. The run
 
 A walkthrough of what the runtime does between `claude` typed at the terminal and the first user prompt being usable. The reader who understands this sequence will understand why each layer of the harness sits where it does.
 
-First, the runtime parses command-line arguments. Flags like `--model claude-sonnet-4-6` or `--resume` get applied. A `--dangerously-skip-permissions` flag, if present, sets the session into bypass mode. The Mac harness denies model-proposed invocations of the flag at the Bash rule layer; operator-initiated bypass at session start is permitted per Phase 2 Q9 (narrowed 2026-05-11), and `skipDangerousModePermissionPrompt: true` in `~/.claude/settings.json` is the documented expected state for that case.
+First, the runtime parses command-line arguments. Flags like `--model claude-sonnet-4-6` or `--resume` get applied. A `--dangerously-skip-permissions` flag, if present, sets the session into bypass mode. The Mac harness denies model-proposed invocations of the flag at the Bash rule layer. operator-initiated bypass at session start is permitted per Phase 2 Q9 (narrowed 2026-05-11), and `skipDangerousModePermissionPrompt: true` in `~/.claude/settings.json` is the documented expected state for that case.
 
 Second, the runtime resolves the working directory and walks the project hierarchy looking for `CLAUDE.md` files. It loads the project root, any nested `CLAUDE.md` between the project root and the working directory, and (for this repository) `mac/harness/CLAUDE.md`. These contribute to the cached prefix.
 
@@ -100,7 +84,19 @@ The whole sequence takes a fraction of a second on a warm cache. On a cold cache
 
 This guide describes the harness in `/Users/klambros/harness-engineering/`. The harness is built around macOS on Apple Silicon as the validated platform. the Jetson AGX Orin and Windows sections of the repository are scaffolded against the same patterns. The guide focuses on the Mac validation because that is where the patterns are proven.
 
-The reader does not need to clone this harness or run it. The guide is read first as reference for "what does a thoughtful harness look like" and second as a worked example to fork from. The repository's README addresses the "what is this" question. this document addresses "how does it work."
+The reader does not need to clone this harness or run it. The guide is read first as reference for "what does a thoughtful harness look like" and second as a worked example to fork from. The repository's README addresses the "what is this" question. USER_GUIDE addresses "what does it do day to day." This document addresses "how does it work and why."
+
+### §1.6 What this guide does not cover
+
+Three classes of content live outside this document, with pointers to where they live.
+
+**Operational behavior.** What message fires when the cached-prefix gate intercepts a write to `CLAUDE.md`. What command to type when the SessionStart audit blocks a freshly cloned repository. What workflow benefits from spawning a reviewer subagent. All of this is in `USER_GUIDE.md`. The split is intentional: the operational reader and the architectural reader want different things from the same files. Conflating the two produces a document that is too long for either audience.
+
+**The build narrative.** Why was `auto` mode chosen over `default` mode in Phase 2 Q1? What did the Phase 5 reviewer subagent flag as F01 through F13 and how did the Writer disposition each? What was tried and abandoned during Phase 3 deep-evaluation of security tools? `JOURNEY.md` carries the chronological build story. This guide cites phase outputs by section reference but does not reconstruct the build sequence in narrative form.
+
+**The platform-agnostic thinking.** The full Quality Contract specification, the full threat model, the architectural principles, the seed evaluation methodology, the research references. These live in `foundation/`. This guide cites the foundation documents inline where they motivate a specific design choice but does not duplicate their content.
+
+A reader who finishes this document and wants more depth on a specific area has three further-reading paths. For the runtime detail, `research/Claude_Architecture.md` is the Liu et al. reverse-engineering study of Claude Code v2.1.88. For the harness-engineering discipline, the SAGE doc carries the working definition and the nine-component decomposition. For the NIST alignment, the SP 800-218 document is the SSDF v1.1 reference. The three documents together are the load-bearing background.
 
 ---
 
@@ -140,6 +136,18 @@ The discipline is easier to motivate with three concrete failure modes, each of 
 
 These three failure modes are the load-bearing motivation. A harness that does not address them has not done the harness-engineering work.
 
+### §2.5 What harness engineering is not
+
+The discipline has acquired vendor-marketing momentum that the practice itself rejects. Three things harness engineering is not.
+
+**Not a product category.** A vendor that ships a "harness" is selling configuration plus tooling. The discipline is the engineering practice that produces that configuration, regardless of whether it ships as a product or as a private dotfile tree. The artifact is calibrated decisions plus rationale. who hosts the artifact is a separate question.
+
+**Not a synonym for prompt engineering.** Prompt engineering is the discipline of writing the messages a model reads. Harness engineering is the discipline of configuring the environment in which the model runs. A harness shapes what tools the model can use, what permissions those tools need, what files the model loads at session start. The prompt is one input to the model. the harness is the substrate that interprets that prompt safely.
+
+**Not a substitute for security review.** A harness is an artifact a security reviewer can evaluate. it is not the security review itself. The discipline produces a threat model, a quality contract, and a set of calibrated decisions, which a reviewer can read and challenge. The reviewer's challenges feed back into the next revision. The harness without the periodic review is a snapshot that decays. the harness with the review is a living artifact.
+
+The SAGE doc (`research/Harness_Engineering_for_Claude_Code_A_Systems_Architecture_Analysis.md`) Section 2.3 lays out the strongest counterargument to harness engineering as a discrete discipline: that it is "agent scaffolding with a different label." The counter-counter is that the discipline carries a specific posture (deterministic where possible, advisory where not. calibrated decisions over defaults. rationale preserved as a first-class artifact) that the broader "scaffolding" label does not require. The label matters less than the posture.
+
 ---
 
 ## §3. The five layers of a Claude Code harness
@@ -154,7 +162,36 @@ The layers, summarized in one sentence each:
 - **Extension layer**: skills, agents, and MCP servers. Composable capabilities the model can use.
 - **Telemetry layer**: session logs, audit registries, cache statistics. The on-disk surface the harness produces.
 
-The Mac harness uses all five. Most production harnesses use all five. A reader exploring whether to add an artifact picks the right layer first. the artifact templates in §6 follow from the layer choice.
+The five-layer model in one diagram:
+
+```mermaid
+flowchart TB
+  subgraph Permission [Permission layer]
+    Deny[Deny rules]
+    Allow[Allow rules]
+    Mode[defaultMode]
+  end
+  subgraph Hooks [Hook layer]
+    Pre[PreToolUse]
+    Post[PostToolUse]
+    Session[SessionStart and Stop]
+  end
+  subgraph Memory [Memory and cache layer]
+    Hierarchy[CLAUDE.md hierarchy]
+    Cache[Cache lineage]
+  end
+  subgraph Extension [Extension layer]
+    Skills[Skills]
+    Agents[Subagents]
+    MCP[MCP servers]
+  end
+  subgraph Telemetry [Telemetry layer]
+    Logs[Session logs]
+  end
+  Permission --> Hooks --> Memory --> Extension --> Telemetry
+```
+
+The Mac harness uses all five. Most production harnesses use all five. A reader exploring whether to add an artifact picks the right layer first. the artifact templates in §5 follow from the layer choice.
 
 ### §3.1 Permission layer
 
@@ -178,8 +215,6 @@ The deny-first evaluation order is the load-bearing detail. A broad deny always 
 
 **A worked example of a deny rule firing.** The user asks the model to clean up a stale branch. The model decides on `git push --force origin feature/old`. The runtime parses the tool call, sees the tool name `Bash` and the input `git push --force origin feature/old`, and evaluates deny rules. The Mac harness has `Bash(git push --force:*)` in the deny set. The runtime matches the literal prefix `git push --force` against the input, the `:*` glob matches `origin feature/old`, the rule fires, and the runtime returns a deny decision to the model. The model sees a structured "permission denied" response with the rule name, and the user is never prompted. The model can choose to either explain the failure to the user, attempt a different tool call, or abandon the operation. The user's attention has not been consumed. the deterministic enforcement has done its job.
 
-The same example with a softer rule: if the deny pattern had been `Bash(git push --force)` (without the `:*` glob), the literal prefix would still match, but the runtime's prefix-matching semantics still apply: any command starting with `git push --force` matches the pattern, glob or no glob. The `:*` form is the explicit and recommended form. the prefix-only form works in v2.1.x but the documentation example is the explicit one.
-
 **What the layer cannot do.** A deny rule cannot inspect the content of a file being written, only the path. A deny rule cannot count subcommands inside a chained Bash invocation. A deny rule cannot compute a SHA-256 of a file at session start. For semantic checks of that kind, the hook layer is the right tool.
 
 ### §3.2 Hook layer
@@ -187,6 +222,33 @@ The same example with a softer rule: if the deny pattern had been `Bash(git push
 The hook layer fires deterministically on lifecycle events. Each hook is a script the runtime invokes synchronously, passing an event-specific JSON payload on stdin and reading a JSON decision from stdout. The script's exit code and stdout together decide whether the runtime continues. *(Claude_Architecture.md §6 carries the event taxonomy.)*
 
 The runtime exposes 27 hook events in v2.1.x. The ones a typical harness cares about are PreToolUse (before any tool call), PostToolUse (after the tool call returns), SessionStart (when the session begins), Stop (when the session ends), UserPromptSubmit (when the user sends a message), Notification (when the runtime emits a notification), and the compaction events PreCompact and PostCompact. The other 20 are useful for advanced cases.
+
+The lifecycle events fire in a defined order across a session:
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Runtime as Claude Code runtime
+  participant Hooks as Registered hooks
+  participant Model
+  User->>Runtime: claude (start session)
+  Runtime->>Hooks: SessionStart
+  Hooks-->>Runtime: allow or block
+  loop Each user turn
+    User->>Runtime: prompt
+    Runtime->>Hooks: UserPromptSubmit
+    Runtime->>Model: prompt + cached prefix
+    Model-->>Runtime: tool call
+    Runtime->>Hooks: PreToolUse
+    Hooks-->>Runtime: allow ask or deny
+    Runtime->>Model: tool result
+    Runtime->>Hooks: PostToolUse
+    Model-->>Runtime: response
+    Runtime->>User: response
+  end
+  User->>Runtime: end session
+  Runtime->>Hooks: Stop
+```
 
 Each event sees a different JSON payload. PreToolUse sees the tool name, the tool input, the working directory, and session metadata. SessionStart sees the working directory and session ID. The hook script reads stdin, parses the payload, and decides what to do.
 
@@ -211,7 +273,7 @@ The two layers compose. A deny rule catches the simple cases at low friction. A 
 }
 ```
 
-The hook parses the JSON, checks that `tool_name` is `Bash`, extracts the command string, counts chain operators (`&&`, `||`, `;`, `|`) outside quoted regions, and compares against the cap of 30. For the input above, the count is 6 (the command has 5 chain operators plus the initial subcommand). The hook returns exit 0 with empty stdout, and the runtime allows the call.
+The hook parses the JSON, checks that `tool_name` is `Bash`, extracts the command string, counts chain operators (the four token forms: AND-AND, OR-OR, statement separator, pipe) outside quoted regions, and compares against the cap of 30. For the input above, the count is 6 (the command has 5 chain operators plus the initial subcommand). The hook returns exit 0 with empty stdout, and the runtime allows the call.
 
 For a 35-subcommand chain, the count exceeds the cap, and the hook writes a JSON response to stdout:
 
@@ -220,7 +282,7 @@ For a 35-subcommand chain, the count exceeds the cap, and the hook writes a JSON
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
     "permissionDecision": "deny",
-    "permissionDecisionReason": "Bash chain has 35 subcommands; cap is 30 (Phase 2 Q6, foundation/01 Threat actors #4). Split into multiple Bash invocations."
+    "permissionDecisionReason": "Bash chain has 35 subcommands. cap is 30 (Phase 2 Q6, foundation/01 Threat actors #4). Split into multiple Bash invocations."
   }
 }
 ```
@@ -234,6 +296,27 @@ The exit-code-only path (no stdout, only exit 2) is the conventional non-zero si
 The memory and cache layer is the set of files Claude Code loads into the model's context at session start, plus the cache machinery that lets that load happen cheaply on subsequent sessions. *(QC.4b in `foundation/00-quality-contract.md` is the relevant quality property.)*
 
 The cached prefix has four parts: the project root `CLAUDE.md` if the working directory has one, the harness `CLAUDE.md` for the platform, any nested `CLAUDE.md` files between the working directory and the project root, and the user-level `~/.claude/CLAUDE.md` plus its `@import` chain.
+
+The hierarchy with `@import` resolution looks like this:
+
+```mermaid
+flowchart TD
+  Root[Project root CLAUDE.md]
+  Harness[mac/harness/CLAUDE.md]
+  User[~/.claude/CLAUDE.md]
+  Flags[FLAGS.md]
+  Rules[RULES.md]
+  Principles[PRINCIPLES.md]
+  Modes[MODE_*.md x5]
+  MCPs[MCP_*.md x6]
+  Root --> Harness
+  Root --> User
+  User --> Flags
+  User --> Rules
+  User --> Principles
+  User --> Modes
+  User --> MCPs
+```
 
 `@import` resolution is a top-down include mechanism. The user-level `~/.claude/CLAUDE.md` can include `@FLAGS.md`, which resolves to `~/.claude/FLAGS.md`. That file can in turn include `@MCP_Context7.md`, and so on. The chain expands transitively. The drift-check script in `scripts/drift-check.sh` walks the chain and sums lines.
 
@@ -276,6 +359,23 @@ Each `@<filename>` resolves to a file in the same directory (`~/.claude/`). The 
 
 **Why same-family subagent matters.** Cache lineage in Anthropic's cache implementation is per-model. An Opus 4.7 parent and an Opus 4.7 subagent read from the same cache. An Opus 4.7 parent and a Haiku 4.5 subagent do not. the subagent gets a fresh cache miss on the prefix. For build-style work where the parent reads many files and spawns many verifications, same-family lineage compounds significantly. The Mac harness pins both default and subagent default to `claude-opus-4-7` for that reason.
 
+The cache lineage relationship in one diagram:
+
+```mermaid
+sequenceDiagram
+  participant Parent as Parent (Opus 4.7)
+  participant Cache as Cached prefix
+  participant Subagent as Subagent (Opus 4.7)
+  Parent->>Cache: Read CLAUDE.md hierarchy
+  Cache-->>Parent: cached read
+  Parent->>Subagent: Task tool invocation
+  Subagent->>Cache: Read CLAUDE.md hierarchy
+  Cache-->>Subagent: same-family cache hit
+  Subagent-->>Parent: result
+```
+
+The same-family edge is the cache-shared step. A cross-family subagent (Opus parent, Haiku subagent) would force a fresh read from the underlying file system rather than reading from the parent's cached prefix.
+
 ### §3.4 Extension layer
 
 The extension layer is where skills, agents, and MCP servers live. Each is a different kind of capability, with different trust properties and different cost.
@@ -294,7 +394,7 @@ The QC.4a discipline matters here. Same-family subagents (Opus parent, Opus suba
 
 Each MCP server is a permission grant. The server's code runs locally, can access the network, can read files inside its working directory, and can return arbitrary content to the model. The deny-by-default posture in `foundation/02-architectural-principles.md` Principle 2 applies: a new MCP server registration is a deliberate decision recorded in a commit, not a casual install.
 
-The Mac harness uses the `mcpServers` allowlist as the structural mechanism. Empty by default. Each addition goes through the `mcp-server-pre-trust-audit` skill's six-check audit (license, source review, network egress, version pin, secret handling, tool subset) before landing. *(That skill is documented in §4.16 of this guide.)*
+The Mac harness uses the `mcpServers` allowlist as the structural mechanism. Empty by default. Each addition goes through the `mcp-server-pre-trust-audit` skill's six-check audit (license, source review, network egress, version pin, secret handling, tool subset) before landing. *(That skill is documented in §4.15 of this guide.)*
 
 When to use which extension type:
 
@@ -304,29 +404,7 @@ When to use which extension type:
 
 The three are not mutually exclusive. A skill can recommend invoking an agent. An agent can use an MCP server's tools. The composition is the point.
 
-**A worked example of an MCP server registration.** Consider registering a Sentry MCP server that exposes issue-tracking tools. The first step is the six-check audit (the `mcp-server-pre-trust-audit` skill drives this. §4.15 covers the skill in detail). The license check passes (Sentry's MCP server is MIT-licensed). The source review reads the server's entry point and confirms it talks to `sentry.io` and nothing else. The network egress check confirms the documented endpoint list. The version pin check picks the current published version `1.2.0` rather than a floating `latest` tag. The secret handling check confirms the `SENTRY_AUTH_TOKEN` environment variable is the credential mechanism, resolved at server startup from macOS Keychain. The tool subset check picks five tools out of the seventeen available, the ones the engineer expects to invoke.
-
-The registration in `mcpServers` looks like:
-
-```json
-"mcpServers": {
-  "sentry": {
-    "command": "npx",
-    "args": ["-y", "@sentry/mcp-server@1.2.0"],
-    "env": {
-      "SENTRY_AUTH_TOKEN": "${env:SENTRY_AUTH_TOKEN}"
-    }
-  }
-}
-```
-
-The `${env:SENTRY_AUTH_TOKEN}` syntax resolves the variable at server startup. the literal token never lands in the settings file. The pinned `@1.2.0` version turns the `npx -y` shape into a pinned install that the supply-chain hook (§4.6) accepts without prompt.
-
-After registration, the runtime starts the server as a subprocess on session start. The server's tools appear in the model's pool prefixed with `mcp__sentry__`. The engineer's settings file `enabledPlugins` allows the server to expose its tool definitions.
-
-The audit's output (license findings, network endpoints, tool subset rationale) gets recorded in the commit message that introduces the registration. Re-evaluation triggers (Sentry MCP major version, security advisory) get recorded in `mac/ARCHITECTURE.md` under §Version pins.
-
-### §3.4.5 Where the four extension types fit in practice
+### §3.5 Where the four extension types fit in practice
 
 A summary table of when each extension type is the right tool:
 
@@ -344,7 +422,7 @@ A summary table of when each extension type is the right tool:
 
 The wrong tool produces friction or false confidence. A skill that tries to enforce a property the model can ignore is friction. A deny rule that tries to capture conversational nuance is false confidence. The reader who understands the four extension types picks the right one and then the harness behaves as designed.
 
-### §3.5 Telemetry layer
+### §3.6 Telemetry layer
 
 The telemetry layer is the set of files the runtime writes during sessions. The reader's job is to know what is captured and what to do with it.
 
@@ -379,6 +457,29 @@ The retention discipline applies only to the per-session JSONL files. The aggreg
 This section walks every file in `mac/harness/` one at a time. Each subsection follows the same shape: what the file does, when it fires or loads, what it specifically allows or blocks, why it is calibrated this way, and a citation back to the phase output or foundation document that holds the rationale.
 
 The harness ships eighteen artifacts that get full coverage here: the project advisory `CLAUDE.md`, the permission and registration spine `settings.json`, six hook scripts, six deny rules, two skills, and two subagent definitions. Read in order, the eighteen subsections build a complete picture of what the harness does. Read by need, they serve as reference when extending or auditing a specific layer.
+
+A summary table of the eighteen artifacts and their layers, useful as a reference card before reading the per-file detail:
+
+| # | Artifact | Layer | Primary threat addressed |
+|---|---|---|---|
+| 1 | `mac/harness/CLAUDE.md` | Memory and cache (advisory) | Posture across all threats |
+| 2 | `mac/harness/settings.json` | Permission + extension | All registered defenses |
+| 3 | `PreToolUse-bash-cap-subcommands.py` | Hook | T4 (50-subcommand bypass) |
+| 4 | `PreToolUse-cached-prefix-write-gate.py` | Hook | T5 (cache poisoning) |
+| 5 | `PreToolUse-external-write-gate.py` | Hook | Principle 3 (reversibility) |
+| 6 | `PreToolUse-supply-chain-bash-checks.py` | Hook | T2 (supply chain) |
+| 7 | `SessionStart-audit-claude-config.py` | Hook | T3 (pre-trust initialization) |
+| 8 | `Stop-prune-session-logs.py` | Hook (operational) | Disk-usage and privacy posture |
+| 9 | `bash-deny-dangerously-skip-permissions.md` | Permission | Principle 1 (model-proposed bypass) |
+| 10 | `bash-deny-git-push-force.md` | Permission | Asset 1 (source code integrity) |
+| 11 | `bash-deny-rm-rf-root.md` | Permission | Principle 3 (reversibility) |
+| 12 | `bash-deny-sudo.md` | Permission | Principle 2 (least privilege) |
+| 13 | `filesystem-deny-write-secrets.md` | Permission | Asset 2 (secrets) |
+| 14 | `mcp-deny-server-prefix-default.md` | Permission (structural) | T6 (hostile MCP server) |
+| 15 | `mcp-server-pre-trust-audit/SKILL.md` | Extension (skill) | T6 (hostile MCP server, process-level) |
+| 16 | `seed-evaluation/SKILL.md` | Extension (skill) | QC.2 (no rubric scoring) |
+| 17 | `agents/inventory.md` | Extension (agent) | Discovery scan capability |
+| 18 | `agents/reviewer.md` | Extension (agent) | Phase 5 audit (Writer/Reviewer) |
 
 ### §4.1 mac/harness/CLAUDE.md
 
@@ -441,7 +542,7 @@ The Write and Edit entries duplicate because Claude Code matches tool-name-then-
 
 **When it fires.** Every Bash tool call. Registered under `hooks.PreToolUse` with matcher `Bash`.
 
-**What it blocks.** Any Bash command where the count of `&&`, `||`, `;`, and `|` operators (outside quoted strings) puts the total subcommand count above 30. The hook returns `permissionDecision: deny` with a reason string the model sees: "Bash chain has N subcommands. cap is 30 (Phase 2 Q6, foundation/01 Threat actors #4). Split into multiple Bash invocations."
+**What it blocks.** Any Bash command where the count of chain operators (AND-AND, OR-OR, statement separator, pipe) outside quoted strings puts the total subcommand count above 30. The hook returns `permissionDecision: deny` with a reason string the model sees: "Bash chain has N subcommands. cap is 30 (Phase 2 Q6, foundation/01 Threat actors #4). Split into multiple Bash invocations."
 
 **Why it is calibrated this way.** Phase 2 Q6 picked 30 as the cap, below the Adversa.ai 2026 documented 50-subcommand bypass threshold. Above 50 subcommands, Claude Code's UI parser falls back to a single generic approval prompt instead of per-subcommand deny-rule checks. per-subcommand denies stop firing. The harness caps at 30 for defense in depth, so legitimate long chains get a clear diagnostic before the runtime's own fallback would kick in. The implementation tracks quote state because backslash-escaped quote sequences in malicious payloads should inflate the deny side, never the allow side.
 
@@ -455,12 +556,11 @@ echo '{"tool_name":"Bash","tool_input":{"command":"ls && pwd && date"}}' | \
     python3 PreToolUse-bash-cap-subcommands.py
 # expect: exit 0, empty stdout
 
-# Deny case (35 subcommands, over cap):
-python3 -c 'import sys, json; \
-cmd=" && ".join("echo "+str(i) for i in range(35)); \
-print(json.dumps({"tool_name":"Bash","tool_input":{"command":cmd}}))' | \
-    python3 PreToolUse-bash-cap-subcommands.py
-# expect: exit 0, stdout: hookSpecificOutput with permissionDecision=deny
+# Deny case (35 subcommands, over cap). The verification command builds a
+# Bash chain of 35 echo subcommands joined by AND-AND, packs it into the
+# tool-input JSON, and pipes the result into the hook. The full invocation
+# lives in the hook's header docstring under the verify-deny block.
+# Expect: exit 0, stdout: hookSpecificOutput with permissionDecision=deny
 ```
 
 The verification commands matter for two reasons. The first is initial calibration: a hook that does not behave as documented is broken from day one. The second is upgrade resilience: when Claude Code ships a minor bump that changes the input schema, re-running the verification commands catches the break.
@@ -514,7 +614,7 @@ The verification commands matter for two reasons. The first is initial calibrati
 | `npx -y` without `@<version>` | `npx -y create-react-app demo` | `npx -y create-react-app@5.0.1 demo` |
 | `uvx --from git+` without `@<ref>` | `uvx --from git+https://github.com/x/y.git foo` | `uvx --from git+https://github.com/x/y.git@abc1234 foo` |
 | `pip install` without constraint | `pip install requests` | `pip install requests==2.32.0` |
-| `curl\|sh` or `wget\|bash` | `curl https://x.com/install.sh \| sh` | `curl -o install.sh https://x.com/install.sh` |
+| `curl \| sh` or `wget \| bash` | `curl https://x.com/install.sh \| sh` | `curl -o install.sh https://x.com/install.sh` |
 
 The two-step regex+function pattern in the implementation comes from the F04/F05 fix: a single regex with negative lookahead failed because `\S+` was greedy and consumed the URL including the `@<ref>` suffix. the negative lookahead then scanned text after the URL token, never seeing the ref. The fix is to capture the target token with a simple regex, then check pin presence with a Python function that handles the per-pattern semantics (npm scoped names, git refs after `git+` prefix, pip constraint tokens).
 
@@ -570,13 +670,15 @@ Each entry binds a SHA-256 hash to its audit metadata. The hook treats absence o
 
 **Pattern.** `Bash(claude --dangerously-skip-permissions:*)`.
 
-**What it blocks.** Direct invocations of bypass mode. Wrapped invocations like `env DEBUG=1 claude --dangerously-skip-permissions` are not matched by this pattern. v2.1.x's `Bash(prefix:glob)` form requires a literal command-head prefix per `research/Claude_Architecture.md` §5.1.
+**What it blocks.** Direct invocations of bypass mode initiated by the model. Wrapped invocations like `env DEBUG=1 claude --dangerously-skip-permissions` are not matched by this pattern. v2.1.x's `Bash(prefix:glob)` form requires a literal command-head prefix per `research/Claude_Architecture.md` §5.1.
 
-**Why it is calibrated this way.** Foundation Principle 1: hooks enforce, CLAUDE.md advises. The advisory text in `mac/harness/CLAUDE.md` names model-proposed bypass as a path the harness keeps closed, and the deny rule is the deterministic floor under it. Phase 2 Q9 originally elected to remove `skipDangerousModePermissionPrompt: true` from the rebuilt `~/.claude/settings.json`; the 2026-05-11 narrowing kept the deny rule for model-proposed invocations and accepted operator-initiated bypass at session start as the documented expected state. The Phase 5 audit F02 dropped an unsupported empty-prefix attempt that did not produce enforcement; the single remaining pattern is the deliberate calibrated-minimum. Wrapped invocations fall to the auto-mode classifier as residual risk, with a post-launch revision trigger to add a content-scanning PreToolUse hook if the residual rate becomes a problem.
+**Why it is calibrated this way.** Foundation Principle 1: hooks enforce, CLAUDE.md advises. The advisory text in `mac/harness/CLAUDE.md` names model-proposed bypass as a path the harness keeps closed, and the deny rule is the deterministic floor under it. Phase 2 Q9 originally elected to remove `skipDangerousModePermissionPrompt: true` from the rebuilt `~/.claude/settings.json`. the 2026-05-11 narrowing kept the deny rule for model-proposed invocations and accepted operator-initiated bypass at session start as the documented expected state. The Phase 5 audit F02 dropped an unsupported empty-prefix attempt that did not produce enforcement. the single remaining pattern is the deliberate calibrated-minimum. Wrapped invocations fall to the auto-mode classifier as residual risk, with a post-launch revision trigger to add a content-scanning PreToolUse hook if the residual rate becomes a problem.
 
 **Why deny, not ask.** The whole point of bypass mode is to skip prompts. Asking via deny-fires-ask-dialog defeats the user's intent. Outright deny is the right cost. legitimate bypass use cases (no-internet sandboxes per `claude --help`) are rare, deliberate, and worth the friction of removing this rule for one session.
 
-**Citation.** `mac/harness/rules/bash-deny-dangerously-skip-permissions.md`. Phase 5 finding F02 in `phase-outputs/PHASE-5-AUDIT.md`. Phase 2 Q9 in `phase-outputs/ANSWERS.md`.
+**Out of scope: operator-initiated bypass.** The narrowed Q9 keeps the deny rule for model-proposed invocations only. An operator who launches Claude Code from the terminal with `claude --dangerously-skip-permissions` is making a deliberate choice. the runtime persists `skipDangerousModePermissionPrompt: true` to `~/.claude/settings.json` after the operator dismisses the bypass-mode warning dialog with the don't-ask-again affordance. The key returning to the file is the runtime working as designed, not a defect to keep deleting. The residual risk under operator-initiated bypass (prompt injection in tool returns reaching shell without confirmation) lands on the operator and is accepted as a documented exception in `foundation/01-threat-model.md`.
+
+**Citation.** `mac/harness/rules/bash-deny-dangerously-skip-permissions.md`. Phase 5 finding F02 in `phase-outputs/PHASE-5-AUDIT.md`. Phase 2 Q9 in `phase-outputs/ANSWERS.md` (narrowed 2026-05-11).
 
 ### §4.10 bash-deny-git-push-force.md
 
@@ -632,8 +734,6 @@ Each entry binds a SHA-256 hash to its audit metadata. The hook treats absence o
 
 **Pattern dialect uncertainty.** Claude Code v2.1.x supports glob patterns for Write/Edit deny rules per `permissions.ts`, but the exact dialect (whether `**/.env.*` matches `.env.local`, whether `**/secrets/**` matches files inside symlinked directories) is not visible from `claude --help` and the source-level study of `research/Claude_Architecture.md` does not document it explicitly. The pattern set in this rule reflects the documented intent. the runtime verification happens during the `~/.claude/` rebuild operational step, where Write tool calls against `.env` paths exercise the runtime and produce the evidence. If the glob does not fire as documented, the fallback is extending `PreToolUse-external-write-gate.py` to include in-cwd secret-path matching.
 
-**The Phase 1 finding context.** Phase 1 surfaced a plaintext Hetzner Cloud API token in `~/.claude/mcp.json` (item #1) and plaintext Neon Postgres URLs in `ai_governance_toolkit_website/.claude/settings.local.json` (item #3). Neither finding wrote to a `.env`-pattern path. both wrote to settings files through different mechanisms. The rule's pattern set addresses the direct-write surface (Write or Edit against a recognized secret-file convention), not the indirect-write surface (a `Bash(DEV_DATABASE_URL=...)` permission grant landing in a settings file). The two surfaces need different defenses. the rule is the right tool for the direct surface.
-
 ### §4.14 mcp-deny-server-prefix-default.md
 
 **What it does.** Documents the design decision that the default MCP posture is no deny rule, with the structural mechanism of an empty `mcpServers` allowlist carrying the enforcement.
@@ -649,8 +749,6 @@ Each entry binds a SHA-256 hash to its audit metadata. The hook treats absence o
 **The deny-first interaction problem.** The architectural reason this is a design document rather than a rule is the deny-first ordering. Claude Code evaluates deny rules before allow rules. A blanket `mcp__*` deny would match every MCP tool call, including calls to allowlisted servers. The allow rule `mcp__sentry` would not override the broader deny because the deny fires first. The right mechanism is therefore allowlist-by-absence: `mcpServers: {}` means no MCP server reaches the tool pool. explicit `mcpServers` entries add servers one at a time.
 
 The mechanism works because tool pool assembly happens before deny evaluation. The runtime calls `getAllBaseTools()` to assemble the pool. the pool composition is filtered by which MCP servers are registered. deny rules then apply to the assembled pool. An unregistered MCP server's tools never enter the pool, so no deny rule ever needs to evaluate against them. The structural mechanism is cheaper, simpler, and more correct than a rule-based one.
-
-**Per-server narrow denies still work.** Once a server is allowlisted in `mcpServers`, its tools enter the pool, and narrow deny rules against specific tools fire correctly. `mcp__sentry` is allowed (by registration). `mcp__sentry__delete_project` can be denied (by deny rule). the deny-first ordering correctly blocks the specific tool while allowing the others. Narrow denies under broader allows are the right place to use the deny-rule mechanism for MCP-related restrictions.
 
 ### §4.15 mcp-server-pre-trust-audit (skill)
 
@@ -677,8 +775,6 @@ Check 4 (version pin) requires `mcpServers` invocation to pin to a specific vers
 Check 5 (secret handling) requires that credentials live in environment variables resolved at server startup, not in plaintext in `~/.claude/mcp.json` or `mac/harness/settings.json`. The macOS Keychain or 1Password CLI is the secret store. `mcpServers.<server>.env.X = "${env:X}"` is the indirection form.
 
 Check 6 (tool subset) requires the allowlisted tool set to be the minimum the harness needs. Inline the explicit tool list where the server schema supports it. otherwise document the intended tool subset in the phase notes.
-
-**A failed audit example.** A hypothetical MCP server proposes registering an "AI agent platform" with network egress to a vendor-controlled endpoint, no version pin, and a wildcard tool surface. Check 3 fails (egress to a vendor endpoint rather than a declared purpose). Check 4 fails (no pin). Check 6 fails (wildcard surface). The audit decision is reject, and the rationale lands in `phase-outputs/PHASE-4-NOTES.md` so the next audit does not re-evaluate without new information.
 
 ### §4.16 seed-evaluation (skill)
 
@@ -742,87 +838,29 @@ The plugin layer is the `enabledPlugins` block plus the MCP server allowlist. Tw
 
 The reader's job, when extending the harness, is to know which layer their addition belongs in. A property that must hold every time goes in a hook or deny rule. A conversational pattern that should hold most of the time goes in a skill. A verifiable subtask goes in an agent. An external integration goes through the MCP audit and lands in `mcpServers`. The composition is the point. mixing the layers (a deny rule for a conversational pattern, a skill for a property that must hold) is the most common mistake.
 
----
+### §4.20 What the harness does NOT include
 
-## §5. How to use this harness
+A short list of additions a reader might expect that this harness deliberately does not have.
 
-The reader who wants to use this harness on their own machine should adapt rather than copy. The locked decision in `CHECKPOINT.md` is that personal-specific is the value: the calibrations in this harness reflect a specific threat model, a specific tool inventory, a specific workload, and a specific Claude Code minor-version pin. Wholesale copying produces a configuration that looks plausible and is wrong for the reader's environment.
+**No `PostToolUse` hooks.** The Mac harness's hooks are all PreToolUse (gating), SessionStart (audit), or Stop (retention). PostToolUse fires after the tool call returns. it is useful for audit-trail collection but cannot gate a write that has already landed. Phase 2 Q2a's T5 hook was originally proposed as PostToolUse and Phase 3 implemented it as PreToolUse for the gating intent. The post-launch revision can add PostToolUse hooks for audit-trail collection if a specific need surfaces.
 
-### §5.1 The fork-and-adapt path
+**No `UserPromptSubmit` hook.** A hook on every user prompt is a useful place for input scanning (prompt-injection detection on the user's own input, redaction of secrets the user might type accidentally). The Mac harness skips this because the use cases the reader has are best served by the user's own discipline plus the runtime's classifier. A reader who handles untrusted user input (e.g., a session that processes external prompts) might add a hook here.
 
-The recommended path is fork-and-adapt. Three sub-paths fit different starting positions.
+**No content-scanning hook on tool returns.** The T1 (prompt injection) class is mitigated advisorily, not deterministically. Phase 2 Q2a explicitly elected to skip this. A content-scanning hook on every tool return would scan an unbounded amount of text on every web search, every file read, every MCP tool call. The friction cost was deemed too high for the daily-driver workload.
 
-**In-repo as read-only reference.** Clone the repository, read through the foundation documents, this guide, and the Mac section, and use the patterns as inspiration for the reader's own harness. The reader's harness lives in their own repository or directly in their `~/.claude/` tree. No symlink, no copy, no shared dependency. This is the lightest-touch path and the right starting point for most readers.
+**No backup automation.** §8.5 names the backup-before-destructive-changes discipline but the harness does not automate it. Backup workflows depend on the engineer's storage choices (local, cloud, encrypted). The harness leaves the choice to the engineer and documents the discipline.
 
-**Copy-into-your-own-repo with ownership.** Some readers want a versioned harness of their own. The path is to copy the structure of `mac/harness/` into a new private repository (or a private subdirectory of an existing repository), modify every file to match the reader's environment, and maintain it from there. The Quality Contract is the quality bar. the reader's harness is bound by the same six properties unless they explicitly choose to relax one.
+**No vulnerability advisory monitor.** A periodic check against published CVEs against the harness's pinned dependencies is valuable. The Mac harness does not include one. The post-launch revision can add an `osv-scanner` integration if the operational cost is justified.
 
-**As the basis for rebuilding your own `~/.claude/`.** The author of this repository rebuilt his own `~/.claude/` from the source-of-truth in `mac/harness/` per Phase 2 Q3. The operation is documented in `operations/04-user-claude-rebuild.md`. The path is to build the harness in-repo, validate it, and propagate to `~/.claude/` as a separate operational step with its own backup and verification. This path produces a daily-driver harness with a clean separation between the in-repo reference (source of truth) and the runtime location (`~/.claude/`).
-
-### §5.1.4 The post-launch operational sequence
-
-The Mac harness's post-Phase-5 operational steps illustrate what "rebuild your own `~/.claude/`" looks like in practice. The sequence (documented in `operations/` directory) involves five steps:
-
-The first is the drift-check widening (operation 01). The pre-built drift check measured only the project hierarchy. the widening extends to the user-level chain so the QC.4b cap covers everything the cached prefix contains.
-
-The second is cross-pollination (operation 03). The Mac validation produces findings (the F02 through F11 list in `phase-outputs/PHASE-5-AUDIT.md`) that apply equally to Jetson and Windows. The cross-pollination step applies the findings to the scaffolded sections of those platforms.
-
-The third is the `~/.claude/` rebuild (operation 04). The in-repo `mac/harness/` is the source of truth. the rebuild copies the relevant files to `~/.claude/`, substitutes absolute paths, removes Phase 2 Q9's deprecated bypass setting, and commits the result to a private `~/.claude/` git repository for change tracking.
-
-The fourth is the platform execution sequence (operation 05). The Jetson and Windows build sequences are queued for execution when the hardware is available.
-
-The fifth is the documentation closeout (operations 06 through 09). Operation 06 rewrote the README. Operation 07 produces this guide. Operation 08 rewrites JOURNEY. Operation 09 closes the build.
-
-The sequence is sequential by design: each operation depends on its predecessor's output. A reader who forks this harness would adapt the sequence to their environment, but the shape (validate, propagate, rebuild, schedule, document) is the discipline.
-
-### §5.2 The Quality Contract as a bar
-
-Holding a forked harness to the Quality Contract is what makes it harness-engineering rather than configuration. The six properties (QC.1 through QC.5, with QC.4 split into 4a and 4b. see §7 of this guide for the in-practice walkthrough) are the discipline. The reader's harness commits, hook scripts, deny rules, and skill bodies are audited against them. If the reader chooses to relax a property, the relaxation is explicit and recorded in a commit message.
-
-The QC bar protects against three failure modes: silent drift (the harness slowly stops doing what the engineer thinks it does), capability creep (every quarter the harness adds a new MCP server and never removes one), and instruction-following degradation (the CLAUDE.md hierarchy grows until the model stops following it). Each property addresses a specific failure mode.
-
-### §5.3 The drift-check script
-
-The drift-check script at `scripts/drift-check.sh` enforces the cached-prefix discipline (QC.4b). It walks the project hierarchy plus the user-level `~/.claude/CLAUDE.md` and its `@import` chain, sums line counts, and compares against the 400-line cap. The 250-line target is the engineer's discipline. the cap is the hard gate.
-
-A reader who forks this harness extends the drift-check for their environment. The script is shell, takes no arguments, and is intended to run from the repository root or from `~/.claude/` directly. Pre-commit hook wiring is in `.pre-commit-config.yaml` in this repository.
-
-The widening landed during Phase 2 Q10 / Post-Mac 1 of this build. Before the widening, the script measured only the project hierarchy. the user-level chain was invisible. The widened script's output now separates project-controlled (under cap) from user-level (currently above cap due to the inherited SuperClaude framework chain documented as an accepted Q3 exception). The reader's fork can decide whether to keep that exception or rebuild the user-level chain lean.
-
-### §5.4 When to deviate
-
-Most readers will need to deviate from this harness's defaults. The threat model in `foundation/01-threat-model.md` covers Rock's environment: a Mac, a public reference repository, a personal threat tolerance. A reader on a corporate laptop with a different threat model deviates by tightening or loosening specific rules.
-
-Examples of legitimate deviations:
-
-- A reader in an environment where force-push is part of the daily workflow (a feature-branch flow with mandatory rebase) might keep the `bash-deny-git-push-force.md` rule but add an explicit allow for force-pushes to non-main branches via a pattern like `Bash(git push --force-with-lease origin feature/:*)`. The cost is the extra pattern. the benefit is workflow alignment.
-- A reader who never works on machines without disk encryption may relax the cached-prefix-write gate to allow `~/.claude/CLAUDE.md` edits without confirmation, treating the local file system as trusted. The cost is the loss of one defensive layer. the benefit is fewer prompts.
-- A reader who uses MCP servers heavily in their daily workflow expands the `mcpServers` allowlist beyond the calibrated minimum of two plugins. Each addition goes through the six-check pre-trust audit (§4.15 of this guide). the audit is the discipline, not the count.
-
-The deviation is the reader's decision. The discipline is recording the deviation in a commit message with a rationale block, so the deviation does not become invisible drift.
-
-### §5.5 What to commit to a forked harness's repository
-
-A forked harness gets its own repository (private or public, the reader's choice). The repository's contents at minimum:
-
-The harness directory itself: `CLAUDE.md`, `settings.json` (with the reader's deny rules, hook registrations, plugin list, and MCP allowlist), `hooks/`, `rules/`, `skills/`, `agents/`. Pinned to specific versions where applicable.
-
-A foundation directory with the reader's own QC, threat model, principles, and seed evaluation. The reader's foundation may differ substantially from Rock's. the discipline is to write it, not to copy it.
-
-A scripts directory with the reader's own drift check (or a fork of `scripts/drift-check.sh`), pre-commit configuration, and any tooling specific to the reader's environment.
-
-A README and a HARNESS_GUIDE for the reader's audience. The repository may be private (in which case the documents serve the reader's future self). the writing-it-down discipline matters regardless of who reads it.
-
-Optional but recommended: a `phase-outputs/` directory (or equivalent) that records the build steps, the decisions, and the rationale. The reader's own JOURNEY-style narrative captures the chronological build for the next audit.
-
-Not committed: per-machine settings, the reader's `~/.claude/projects/` session logs, any plaintext secrets. The repository tracks the source of truth. the runtime location (`~/.claude/`) is the deployment target.
+**No automated MCP server allowlist updater.** When an MCP server publishes a new pinned version, the engineer manually re-runs the six-check audit and updates the `mcpServers` entry. An automated updater would cut friction but would also automate the trust boundary the audit is designed to make explicit. The manual cadence is a deliberate calibration.
 
 ---
 
-## §6. How to extend this harness
+## §5. How to extend this harness
 
 The reader who wants to add a hook, deny rule, skill, or agent of their own works against the same patterns the Mac build uses. Each extension type has its own template and its own pitfalls.
 
-### §6.1 Adding a hook
+### §5.1 Adding a hook
 
 A new hook is a script the runtime invokes on a lifecycle event. The Mac harness uses Python. the runtime supports any executable.
 
@@ -871,7 +909,7 @@ if __name__ == "__main__":
 
 Register in `settings.json` under `hooks.PreToolUse` with matcher `Bash`. The hook is read-only against the runtime decision (returns exit 0, empty stdout), so it never blocks.
 
-**Common hook pitfalls.** The hook layer has four pitfalls the Mac harness's hooks document and a fork inherits:
+**Common hook pitfalls.** The hook layer has four pitfalls the Mac harness's hooks document and a fork inherits.
 
 The first is silent stdin parsing failure. The hook reads stdin as JSON. an unexpected input format causes `json.JSONDecodeError`. The Mac harness hooks catch the exception and return exit 0, treating an unparseable payload as "do not gate this call." The opposite default (treat parse failure as deny) is also valid, but it produces a session that cannot make tool calls if the runtime ships a payload schema change. The Mac harness picks the permissive default for resilience across runtime versions.
 
@@ -881,7 +919,7 @@ The third is per-session overhead. A hook that runs on every tool call adds late
 
 The fourth is the version-dependent semantics. F09 in the Phase 5 audit documented that SessionStart exit-2 semantics are not authoritatively documented for that event. The Mac harness hedges by using both stdout `additionalContext` and exit 2. A fork that wants to be sure should test the hook against the specific Claude Code version in use and document the observed behavior in the hook header.
 
-### §6.2 Adding a deny rule
+### §5.2 Adding a deny rule
 
 A new deny rule is a pattern added to `settings.json` under `permissions.deny`.
 
@@ -895,31 +933,11 @@ A new deny rule is a pattern added to `settings.json` under `permissions.deny`.
 
 A deny rule that fires often is the wrong abstraction. the engineer should reconsider whether the underlying behavior is what should be denied, or whether the rule pattern is too broad. A rule that fires almost never is also a signal: either the threat is theoretical, in which case the rule is cheap defense in depth, or the rule's pattern does not match the failing inputs, in which case the rule is broken.
 
-**Rule documentation template.** The Mac harness's rule files all follow this structure:
-
-```markdown
-# <rule-name>
-
-## Pattern
-<the exact pattern(s)>
-
-## Threat addressed
-<citation to foundation document; one paragraph explaining why this matters>
-
-## Why deny, not ask
-<the friction-versus-frequency analysis>
-
-## Test
-Positive: <invocations that should fire>
-Negative: <invocations that should not fire>
-
-## Provenance
-<phase, date, and the foundation principle or threat it addresses>
-```
+**Rule documentation template.** The Mac harness's rule files all follow this structure: a Pattern section with the exact pattern(s), a Threat addressed section with foundation citation, a Why deny not ask section with friction-versus-frequency analysis, a Test section with positive and negative invocations, and a Provenance section with phase, date, and the foundation principle or threat addressed.
 
 Forks that adopt the same template get the audit discipline for free: every rule has a recorded rationale, every rule has tests, every rule traces back to a foundation principle.
 
-### §6.3 Adding a skill
+### §5.3 Adding a skill
 
 A new skill is a SKILL.md file with frontmatter and a body.
 
@@ -948,14 +966,14 @@ When the conversation drifts toward a destructive operation:
 3. If yes, recommend committing or stashing first.
 4. If no, confirm the operation and proceed.
 
-The skill is not a gate; the deterministic enforcement lives in deny rules and hooks. The skill is the second-line reminder for operations the deny rules cannot cover (e.g., scoped rm inside cwd).
+The skill is not a gate. the deterministic enforcement lives in deny rules and hooks. The skill is the second-line reminder for operations the deny rules cannot cover (e.g., scoped rm inside cwd).
 ```
 
 The skill fits in 12 lines plus frontmatter. The body is a procedure the model follows when the description matches the conversation. Good skills are short. long skills are usually two skills wearing one trench coat.
 
 **Skill versus hook decision.** A skill suggests. a hook enforces. The reader picks based on whether the property must hold or should usually hold. The Mac harness's `mcp-server-pre-trust-audit` skill is a should-usually case: the audit is the engineer's discipline, not the runtime's gate. The Mac harness's `SessionStart-audit-claude-config.py` hook is a must case: the hash mismatch blocks the session regardless of the engineer's attention. The two are complementary, not substitutes.
 
-### §6.4 Adding an agent
+### §5.4 Adding an agent
 
 A new agent is a markdown file under `~/.claude/agents/` or in a plugin tree.
 
@@ -970,7 +988,7 @@ A new agent is a markdown file under `~/.claude/agents/` or in a plugin tree.
 ```markdown
 ---
 name: smoke-test
-description: Read-only subagent that runs the test suite against the working directory and returns pass/fail per test plus stderr. Used for verifiable test work; not for high-judgment debugging.
+description: Read-only subagent that runs the test suite against the working directory and returns pass/fail per test plus stderr. Used for verifiable test work, not for high-judgment debugging.
 model: claude-opus-4-7
 effort: high
 tools:
@@ -999,16 +1017,16 @@ A single markdown document. One section: pass count, fail count, list of failing
 
 - Do not edit files.
 - Do not propose fixes.
-- Do not run a second test command if the first fails; report the failure and let the parent decide.
+- Do not run a second test command if the first fails. report the failure and let the parent decide.
 ```
 
 The frontmatter declares the agent's posture. the body declares the agent's procedure. The agent runs in a separate Claude Code execution with its own context, its own permission posture, and its own permitted tools. The parent sees the agent's structured return and decides what to do with it.
 
 **When to use a subagent rather than inline work.** Three signals favor subagents: the work is verifiable (the parent can check the return), the work is parallelizable (the parent has other work to do while the subagent runs), and the work benefits from a fresh context (the parent's context is full of other concerns). Three signals favor inline work: the work is high-judgment (the parent and subagent might disagree about success), the work is short (the per-invocation cost dominates), and the work needs the parent's full context (a subagent starting fresh would miss critical state).
 
-### §6.5 A worked composition: gating a new tool
+### §5.5 A worked composition: gating a new tool
 
-The reader who has read §3 through §6 has the vocabulary to compose layers around a new tool the harness wants to integrate. A worked example illustrates the discipline.
+The reader who has read §3 through §5 has the vocabulary to compose layers around a new tool the harness wants to integrate. A worked example illustrates the discipline.
 
 Suppose the reader wants to add a tool that runs `terraform plan` against an infrastructure repository. The tool is potentially destructive (a misconfigured `terraform apply` after a plan can wreck production). the reader wants the harness's defenses applied.
 
@@ -1024,7 +1042,7 @@ Layer 5, the agent (optional): a `terraform-plan-summary` subagent could read a 
 
 Not every tool needs every layer. The reader picks the layers that match the tool's risk profile. A read-only tool (like `git log`) needs no deny rule. A potentially destructive tool (terraform, git push, kubectl, helm) needs the deny rule plus the hook plus the advisory. The harness's eighteen artifacts are the calibrated set for the Mac build's threat model. a fork adds and removes artifacts as the fork's threats shift.
 
-### §6.6 What not to extend
+### §5.6 What not to extend
 
 A short list of additions that are usually wrong. The reader who is about to add one of these should pause and reconsider.
 
@@ -1040,11 +1058,11 @@ A short list of additions that are usually wrong. The reader who is about to add
 
 ---
 
-## §7. The Quality Contract in practice
+## §6. The Quality Contract in practice
 
 The Quality Contract names six properties, each of which addresses a recurring failure mode. This section walks each one in practice: what the property requires, how this harness enforces it, what a violation looks like, and how to detect violations in a forked harness.
 
-### §7.1 QC.1 Security
+### §6.1 QC.1 Security
 
 **What it requires.** Alignment with NIST SP 800-218 SSDF v1.1. Pinned dependencies, secret scanning in pre-commit, SAST gate on executable additions, shell linting on hook scripts, vulnerability disclosure policy for any public project.
 
@@ -1056,7 +1074,7 @@ The Quality Contract names six properties, each of which addresses a recurring f
 
 **A worked QC.1 violation.** Phase 1 inventory surfaced a plaintext Hetzner Cloud API token in `~/.claude/mcp.json`. The token bypassed the harness's defenses because the file is user-level, not in a git-tracked location, and not subject to pre-commit secret scanning. The QC.1 alignment caught the violation through the inventory subagent's discovery scan rather than through the pre-commit pipeline. The fix lands in the post-launch operational step: env-var indirection (`HCLOUD_TOKEN=${env:HCLOUD_TOKEN}` backed by macOS Keychain or 1Password CLI). The lesson is that QC.1 alignment needs both the pre-commit pipeline (catches in-repo violations) and periodic inventory scans (catches out-of-repo violations).
 
-### §7.2 QC.2 Tight code
+### §6.2 QC.2 Tight code
 
 **What it requires.** No speculative scope expansion. Each phase produces only what its prompt named. New abstractions, new dependencies, new test scaffolding, and adjacent-code refactoring all require explicit decisions in the phase output or commit message.
 
@@ -1068,7 +1086,7 @@ The Quality Contract names six properties, each of which addresses a recurring f
 
 **A worked QC.2 violation.** The Phase 3 prompt named six hook scripts and six deny rules as deliverables. A scope-creep version of Phase 3 would have written a seventh hook for a threat the Phase 2 interview did not elect (e.g., a content-scanning T1 hook against tool returns). The seventh hook would have looked good in isolation: it addresses a real threat. The QC.2 violation is that the Phase 2 interview explicitly skipped T1 hook enforcement, and the seventh hook would represent the engineer's preference overriding the calibrated decision. The discipline says: write the prompt's deliverables, surface the scope expansion to the engineer, let the engineer decide whether to expand scope.
 
-### §7.3 QC.3 Comments
+### §6.3 QC.3 Comments
 
 **What it requires.** Comments explain the why, not the what. Each consequential decision in a hook script, deny rule, or skill carries a rationale comment. Obvious lines are not over-commented.
 
@@ -1078,7 +1096,9 @@ The Quality Contract names six properties, each of which addresses a recurring f
 
 **How to detect.** Read the diff before committing. the reviewer subagent's comment-density check. periodic re-reads of the rule files to ensure rationale has not bit-rotted into stale citations.
 
-### §7.4 QC.4a Cache discipline (API and SDK)
+**A worked QC.3 violation.** A maintainer adds a new deny pattern `Bash(curl --insecure:*)` to the rule set. The pattern blocks insecure curl invocations. The commit message says "add curl --insecure deny." The QC.3 violation is that the commit does not explain why curl --insecure is denied. A future reader (the next maintainer, the engineer's own future self after a year) cannot tell whether the rule was defense-in-depth against MITM attacks, a workaround for a specific incident, or a habit imported from another harness. The fix is to expand the commit message: "add curl --insecure deny. The flag disables TLS certificate validation, which the engineer's daily-driver workload never needs. Defense in depth against payload-injection attempts that try to bypass certificate pinning. Cite Phase 2 Q2a (supply-chain class) as the foundation." The rule file's own §Why deny, not ask section gets the same paragraph. The pattern survives the next reader's audit because the rationale is in the artifact.
+
+### §6.4 QC.4a Cache discipline (API and SDK)
 
 **What it requires.** Direct API and SDK use carries explicit `"ttl": "1h"` on cache_control where reuse is expected. Same-family parent and subagent model selection preserves cache lineage. Cache writes shorter than 1024 tokens silently fail. cache reads with telemetry off drop the 1-hour TTL silently.
 
@@ -1088,7 +1108,9 @@ The Quality Contract names six properties, each of which addresses a recurring f
 
 **How to detect.** The API logs show cache hit ratios. a drop in hit ratio is the leading indicator. Per-session cost monitoring catches the cross-family slips. Direct code review of any new API/SDK file catches the explicit cache_control omissions.
 
-### §7.5 QC.4b Context window discipline (Claude Code)
+**A worked QC.4a violation.** A reader writes a Python script that calls the Anthropic API directly to summarize long documents. The script uses the SDK's default cache configuration. The default reverted to a 5-minute TTL in March 2026. The reader's workload re-summarizes the same document set every hour. With the 5-minute TTL, the cached prefix expires between calls, and each summarization pays the full token cost. The cache hit ratio in the API logs drops from the expected 90%+ to under 10%. The fix is to add `cache_control: {"type": "ephemeral", "ttl": "1h"}` to the cacheable content blocks. The hit ratio recovers. The cost monitoring catches the symptom. the explicit `ttl` setting in the code prevents the recurrence.
+
+### §6.5 QC.4b Context window discipline (Claude Code)
 
 **What it requires.** The CLAUDE.md hierarchy across project root, harness, any nested CLAUDE.md, and the user-level `~/.claude/CLAUDE.md` plus its `@import` chain stays under 400 lines total (target 250). `<system-reminder>` blocks carry dynamic content. No timestamps or per-run state in the cached prefix.
 
@@ -1100,7 +1122,7 @@ The Quality Contract names six properties, each of which addresses a recurring f
 
 **A worked QC.4b violation.** A reader who wants to document the build date in `mac/harness/CLAUDE.md` adds the line "Last built: 2026-05-11" near the top. The drift-check does not catch this directly because the line is one line of content. The cache implementation, however, does: the next commit that touches the file changes the timestamp, the hash changes, the cached prefix misses, and the next session pays the cold-cache cost. The pattern repeats on every build update. The fix is to remove the timestamp. the build date lives in commit messages, where it does not pollute the cached prefix. The Phase 5 audit's drift-check covers the line-count discipline but not the timestamp discipline. the engineer's eye on commit diffs is the second line of defense.
 
-### §7.6 QC.5 Versioning
+### §6.6 QC.5 Versioning
 
 **What it requires.** Pin Claude Code to a specific minor-version range. Re-evaluate the harness on every minor-version bump.
 
@@ -1110,13 +1132,47 @@ The Quality Contract names six properties, each of which addresses a recurring f
 
 **How to detect.** The pin in ARCHITECTURE.md is the source of truth. a mismatch with the installed version surfaces in any sanity check. The reader can also wire a session-start check that compares the installed version against the pin and warns on drift.
 
+**A worked QC.5 violation.** Anthropic ships Claude Code v2.2.0 with a new permission mode and a renamed hook event. The engineer runs `brew upgrade claude-code` without re-validating the harness. The next session starts. The deny rules still match because their pattern syntax did not change. The PreToolUse hooks fire because that event name did not change. The SessionStart hook also fires. So far the harness appears to work. But the runtime's exit-code handling for SessionStart (F09 residual risk) silently changed: exit 2 no longer blocks the session. The hash-mismatch case now produces the `additionalContext` warning to the model but allows the session to start. The engineer does not notice because there is no visible failure. The next cloned repository with an unaudited `.claude/settings.json` runs without the audit blocking it. The QC.5 discipline catches this: the minor-version bump should have triggered re-validation against `mac/ARCHITECTURE.md` §Version pins, which would have re-run the SessionStart hook's verification command and caught the regression. The fix is to add the SessionStart verification to the QC.5 re-evaluation checklist that fires on every minor bump.
+
+### §6.7 The Quality Contract as a forking discipline
+
+A reader who forks this harness inherits the Quality Contract bar. The six properties are not specific to this harness's threat model. they apply to any harness that wants to avoid the recurring failure modes. A fork that drops a property explicitly (with rationale recorded) is a deliberate decision. A fork that loses a property silently is the failure mode the discipline prevents.
+
+The discipline against silent loss has two parts. The first is the QC bar in commit review: every commit gets read against the six properties, and any property that is at risk gets flagged. The second is the periodic audit: every quarter or so, re-read the harness against the QC and surface any drift. The Mac build's Phase 5 reviewer subagent is the build-time instance of the discipline. the periodic audit is the post-launch instance. Both are real work. Both pay off in the prevention of failure modes that compound silently otherwise.
+
 ---
 
-## §8. The threat model in practice
+## §7. The threat model in practice
 
 The threat model in `foundation/01-threat-model.md` names six threat-actor classes. This section walks each one in practice: what the threat is, what the consequence is if unmitigated, how this harness mitigates it, and what residual risk remains.
 
-### §8.1 T1 Prompt injection (advisory-only mitigation)
+The threat-to-mitigation mapping at a glance:
+
+```mermaid
+flowchart LR
+  T1[T1 Prompt injection]
+  T2[T2 Supply chain]
+  T3[T3 Pre-trust init]
+  T4[T4 Subcommand bypass]
+  T5[T5 Cache poisoning]
+  T6[T6 Hostile MCP]
+  M_Adv[CLAUDE.md advisory]
+  M_SC[Supply-chain hook]
+  M_SS[SessionStart audit hook]
+  M_Cap[Subcommand cap hook]
+  M_CP[Cached-prefix gate hook]
+  M_Allow[mcpServers allowlist + audit skill]
+  T1 --> M_Adv
+  T2 --> M_SC
+  T3 --> M_SS
+  T4 --> M_Cap
+  T5 --> M_CP
+  T6 --> M_Allow
+```
+
+Each threat has one primary mitigation. composition across threats is covered in §7.7.
+
+### §7.1 T1 Prompt injection (advisory-only mitigation)
 
 **The threat.** A document the model reads contains hostile instructions. A web search result contains them. An MCP tool return contains them. The model treats the instructions as the user's request and acts on them.
 
@@ -1128,7 +1184,7 @@ The threat model in `foundation/01-threat-model.md` names six threat-actor class
 
 **Why the harness does not enforce T1 in a hook.** The Phase 2 interview asked the question explicitly. The recommendation laid out: a content-scanning hook on every tool return would scan an arbitrary amount of text on every web search, every file read, every MCP tool call. The latency cost is non-trivial. The false-positive rate against legitimate content that mentions "ignore previous instructions" or "act as a system administrator" is also non-trivial. The harness's calibration accepts the residual T1 risk because the deterministic alternative would carry friction the daily-driver workload cannot absorb. The advisory text plus the runtime's classifier plus the engineer's vigilance is the calibrated trade. The post-launch revision trigger is a specific failure mode (e.g., an observed compromise via a specific MCP server's tool returns), not a theoretical worry.
 
-### §8.2 T2 Supply chain
+### §7.2 T2 Supply chain
 
 **The threat.** A pinned dependency gets compromised upstream. An unpinned install fetches a malicious version. A `curl|sh` pattern delivers an opportunistic payload.
 
@@ -1138,7 +1194,7 @@ The threat model in `foundation/01-threat-model.md` names six threat-actor class
 
 **Residual risk.** Compromise of an already-pinned dependency at a version the harness trusts. The pin protects against opportunistic upstream changes but not against a targeted attack against the pinned version. The SBOM generation (deferred to a post-launch operational step) and the periodic re-audit are the second-line defenses.
 
-### §8.3 T3 Pre-trust initialization (CVE-2025-59536 class)
+### §7.3 T3 Pre-trust initialization (CVE-2025-59536 class)
 
 **The threat.** Code in `.claude/settings.json` or `.mcp.json` executes during project initialization before the user trust dialog appears. The user clones a repository, opens it in Claude Code, and the repository's hook scripts run before the user has approved anything.
 
@@ -1150,7 +1206,7 @@ The threat model in `foundation/01-threat-model.md` names six threat-actor class
 
 **Bulk acknowledgment for legacy clones.** Phase 1 inventory surveyed 44 in-repo `.claude/` directories on Rock's machine. The SessionStart audit, applied retroactively, would block sessions against every one of those repositories until each was acknowledged. The post-launch operational tool (a CLI that walks the file tree, computes hashes, and writes the registry) handles the bulk addition. The tool is a separate operational deliverable, not a hook itself. the hook reads the registry and the tool writes it. The two compose without coupling.
 
-### §8.4 T4 Sub-command chain bypass
+### §7.4 T4 Sub-command chain bypass
 
 **The threat.** Bash commands chained with more than 50 subcommands fall back to a single generic approval prompt in the runtime's UI parser, instead of per-subcommand deny-rule checks. An attacker payload that crafts a long chain bypasses the deny system.
 
@@ -1160,7 +1216,7 @@ The threat model in `foundation/01-threat-model.md` names six threat-actor class
 
 **Residual risk.** Bypass via tool calls other than Bash. The cap covers Bash specifically because the documented failure mode is Bash. other tools with chain semantics would need similar caps if a chain-bypass class surfaced for them.
 
-### §8.5 T5 Cache poisoning
+### §7.5 T5 Cache poisoning
 
 **The threat.** Text lands in the cached prefix (`CLAUDE.md` hierarchy, `foundation/` documents cited from `CLAUDE.md`, user-level `@import` targets). The text becomes persistent influence over every future session because the runtime loads it on every session start.
 
@@ -1170,7 +1226,7 @@ The threat model in `foundation/01-threat-model.md` names six threat-actor class
 
 **Residual risk.** F10 in the Phase 5 audit documented that the gate does not cover the harness's own deterministic-layer files (`mac/harness/settings.json`, `mac/harness/hooks/`, `mac/harness/rules/`). The threat surface against those files is covered by git pre-commit hooks plus branch protection plus PR review for the public repository. A post-launch revision can extend the gate to include deterministic-layer paths if a specific failure mode surfaces.
 
-### §8.6 T6 Hostile MCP server
+### §7.6 T6 Hostile MCP server
 
 **The threat.** An MCP server registration adds the server's full tool surface to the model's pool. A compromised or hostile MCP server can exfiltrate data, modify code, or escalate privileges through the tool calls the model makes.
 
@@ -1180,7 +1236,7 @@ The threat model in `foundation/01-threat-model.md` names six threat-actor class
 
 **Residual risk.** A server that passes the audit and is registered, then has its upstream package compromised, lands an updated version on the next `npx -y` invocation. The version pin in check 4 reduces but does not eliminate this. an attacker who compromises an already-pinned version is still a real threat. SBOM and periodic re-audit are the second-line defenses.
 
-### §8.7 How threats compose
+### §7.7 How threats compose
 
 The six threat actors above are presented as independent classes. In practice, they compose: an attack chain may combine prompt injection (T1) with supply-chain compromise (T2) to land a malicious payload that exploits a cached-prefix write (T5) to establish persistence. The harness's calibrated defenses are not all maximal in isolation. the calibration assumes the composition.
 
@@ -1190,13 +1246,23 @@ The Mac harness blocks the chain at multiple points. T6 is mitigated by the deny
 
 The discipline against composition attacks is "defense in depth that the engineer can audit." Every defense is documented (in the rule files, the hook headers, the foundation documents). Every defense has a test (the verification commands, the pre-commit checks). Every defense's failure mode is named (the residual risk paragraphs in this section). The engineer who reads the threat model end-to-end can reason about chains, not isolated threats alone.
 
+### §7.8 A second worked composition example
+
+A second example to illustrate the discipline. A reader's daily-driver workflow involves a private GitHub repository with a `.claude/settings.json` that the reader trusts. The reader clones a fork of that repository made by a colleague. The fork's `.claude/settings.json` has been modified to include a `permissions.allow: ["*"]` entry, which would override the harness's deny rules for the session.
+
+How the chain attempts the attack: the fork lands on disk via git clone, the reader runs `claude` in the cloned directory, the runtime loads the project's `.claude/settings.json`, the wildcard allow merges with the user-level deny rules, and the deny-first ordering means the wildcard does not in fact override the denies. The reader's auto-mode classifier may interpret the wildcard as a signal that the user has authorized broader permissions, which could shift the classifier's threshold for ambient approvals.
+
+How the harness blocks the chain: the SessionStart audit hook (§4.7) computes the SHA-256 of the cloned `.claude/settings.json`. The hash does not match anything in `~/.claude/audited-hashes.json` (the colleague's modification produced a new hash). The hook returns exit 2 with stderr and additionalContext. The reader sees the audit failure, reads the cloned settings file, and either discovers the wildcard before running the session, or adds the hash to the registry only after verifying the modification is intentional and reviewed.
+
+The chain has one weak link: if the SessionStart hook fires but does not block (e.g., F09 residual risk under a future Claude Code version), the model still sees the `additionalContext` warning. The model's CLAUDE.md instruction is to treat unaudited config files as suspicious. The advisory text provides the secondary check. The chain succeeds only if both defenses fail simultaneously, which the harness's calibration deems acceptable residual risk.
+
 ---
 
-## §9. Operational discipline
+## §8. Operational discipline
 
 The harness needs maintenance. The five recurring practices below keep the harness honest over time.
 
-### §9.0 The discipline at a glance
+### §8.1 The discipline at a glance
 
 The five practices below recur on different cadences. The fastest-cadence practices (drift check, pre-trust audit, session log retention) fire on the events the harness already produces: commits, session starts, session ends. The slower-cadence practices (backup before destructive changes, drift between expectations and reality) are the engineer's discipline, triggered by what the engineer is about to do.
 
@@ -1204,37 +1270,49 @@ The practices compose: the pre-commit drift check catches commits that violate Q
 
 A harness without any of these decays. A harness with all of them stays honest.
 
-### §9.1 Drift check
+### §8.2 Drift check
 
 The drift-check script in `scripts/drift-check.sh` runs on pre-commit. The check separates project-controlled hierarchy (under the 400-line cap and the 250-line target) from user-level chain (currently above cap as an accepted Q3 exception). On-demand runs are also useful: after a `~/.claude/CLAUDE.md` edit, after a plugin update that adds an `@import` target, before a Claude Code minor bump.
 
 The check catches three drift modes. The first is cached prefix growth: a new section in `CLAUDE.md`, a new `@import` target. The second is cache poisoning patterns: timestamps in the cached prefix that break cache reuse silently. The third is structural rearrangements that the engineer did not intend.
 
-### §9.2 Pre-trust audit for in-repo `.claude/` directories
+### §8.3 Pre-trust audit for in-repo `.claude/` directories
 
 The `SessionStart-audit-claude-config.py` hook fires on every clone with hash-gated approval. Phase 1 surveyed 44 in-repo `.claude/` directories on Rock's machine. each needs bulk acknowledgment. The bulk-acknowledge tool is a post-launch operational deliverable. until then, manual registry edits via the workflow in the hook's header are the path.
 
 The discipline: every cloned repository with a `.claude/` directory gets audited before the first session against it. The 30-second cost on the engineer's side is worth the protection against the CVE-2025-59536 class.
 
-### §9.3 Session log retention
+### §8.4 Session log retention
 
 The Stop hook prunes logs older than 90 days. The initial backlog (4311 accumulated session logs on the Mac at the time of the build, oldest from 2026-03-19) gets pruned on the first invocation. Subsequent runs prune small daily increments.
 
 The retention window is a calibrated decision. 90 days is the Phase 2 Q11 choice. the alternatives were indefinite (privacy and disk-usage cost), 30 days (loses replay value for medium-horizon work), and 7 days (loses too much). The engineer's own retention window may differ. The hook's `RETENTION_DAYS` constant is the knob.
 
-### §9.4 Backup before destructive changes
+### §8.5 Backup before destructive changes
 
 Operation 4 (the `~/.claude/` rebuild) recorded an explicit lesson: every destructive change to the harness gets a backup first. The backup is a full copy of the relevant tree, dated, in a known location. The cost is low (a few hundred megabytes for `~/.claude/`). the value is the ability to restore on failure.
 
 The discipline applies to the project tree too. A `git stash` before a risky refactor. a tagged commit before a structural change. The reflog catches most accidents, but explicit backups catch the rare case where the reflog itself is unhealthy.
 
-### §9.5 Drift between expectations and reality
+**A worked backup-saved-the-day example.** Operation 4 rebuilt `~/.claude/` from the in-repo source of truth. The rebuild touched 60+ files, replaced settings, removed the legacy 16-plugin enabledPlugins list, and substituted absolute paths for the `${CLAUDE_PROJECT_DIR}` template variables. The first attempt had a bug: the audited-hashes.json registry was not initialized, so the next session blocked itself. The backup at `~/.claude.backup-2026-05-11/` provided the rollback path. Without the backup, the rollback would have required reconstructing the legacy state from the previous git commit on the harness-engineering repo plus the engineer's memory of what was in the user-level customizations. The cost of the backup (one cp -R, about 30 seconds) was repaid many times over by the recovery path it preserved.
+
+### §8.6 Drift between expectations and reality
 
 The Phase 5 audit (`phase-outputs/PHASE-5-AUDIT.md`) caught two regex bugs in the supply-chain hook and one missing audit log. The lesson: documentation drifts from implementation faster than the engineer expects. The reviewer subagent's job is to read the artifacts against the spec and surface the drift.
 
 Operational discipline against drift: re-read the hook headers periodically (the verification commands still produce the documented behavior?), re-run the deny-rule positive and negative test cases (the patterns still fire as expected?), re-validate the cache hit ratios (the cache discipline still works?). Audit discipline is real work, not a checkbox. The Mac build's Q9 drift between the `_documentation` block and the actual JSON key in `~/.claude/settings.json` (caught during the Post-Mac 6 closeout) is a recent example of the failure mode.
 
-### §9.6 Re-audit cadences
+### §8.7 The Q9 narrowing as an operational lesson
+
+The Phase 2 Q9 narrowing landed 2026-05-11 after Operation 6 Stage 0 surfaced a doc-vs-runtime drift. The original Q9 elected to remove `skipDangerousModePermissionPrompt: true` from the rebuilt `~/.claude/settings.json`. The runtime kept re-writing the key after every removal because the operator was launching Claude Code with `--dangerously-skip-permissions` from the terminal, and the runtime persists the key when the bypass-mode warning dialog is dismissed with the don't-ask-again affordance.
+
+Three layers of investigation surfaced the failure mode. The first was Stage 0's grep for the key, which kept finding it. The second was `git diff` on the user-level settings file, which showed the key as untracked working-tree drift rather than a tracked commit. The third was the realization that the runtime wrote the key, not the engineer's editor. Once the runtime was identified as the writer, the question shifted from "how to keep the key out" to "is the key supposed to be there." The operator confirmed the bypass-mode posture was intentional. Q9 was narrowed to apply the deny rule to model-proposed invocations only. operator-initiated bypass became the documented expected state.
+
+The operational lesson: when a configuration setting "keeps coming back" despite repeated fixes, check git diff before checking the runtime. If the live state differs from committed state, the runtime is writing it. The next question is whether the runtime's write is wrong or whether the documented expectation is wrong. In Q9's case, the documentation was wrong. the runtime was working as designed.
+
+The narrowing produced four artifacts in the same commit pair: the in-repo doc updates (CLAUDE.md, mac/harness/CLAUDE.md, ANSWERS.md Q9, mac/ARCHITECTURE.md, the bash-deny rule, foundation/01-threat-model.md, foundation/02-architectural-principles.md, three references in HARNESS_GUIDE.md) plus a `_skipDangerousModePermissionPrompt_documentation` block added to the live `~/.claude/settings.json` that explains the intentional state inline. The inline documentation makes future Stage 0 verifications and audits see the design intent at the data, not only in repo docs they may not read.
+
+### §8.8 Re-audit cadences
 
 Different artifacts age at different rates. The cadences below are starting points. the engineer's specific environment may justify tighter or looser intervals.
 
@@ -1254,23 +1332,23 @@ Different artifacts age at different rates. The cadences below are starting poin
 
 ---
 
-## §10. What this harness deliberately does NOT do
+## §9. What this harness deliberately does NOT do
 
 Honest scope. The harness is not a defense against every threat. The list below names what is out of scope and the reason for each.
 
-### §10.1 Not a network egress monitor
+### §9.1 Not a network egress monitor
 
 Phase 2 Q7 elected to skip OS-level egress monitoring. The MCP allowlist plus per-server review carries the load. A reader with a stricter network-egress posture installs an OS-level monitor (Little Snitch on Mac, opensnitch on Linux, GlassWire on Windows) as a separate operational concern. The harness does not own that defense.
 
-### §10.2 Not a full SBOM/SLSA pipeline
+### §9.2 Not a full SBOM/SLSA pipeline
 
 The harness pins dependencies and runs secret scanning in pre-commit, which meets QC.1 alignment with NIST SP 800-218. A full SBOM (Software Bill of Materials, typically generated by `syft` and validated by `grype`) and a full SLSA (Supply-chain Levels for Software Artifacts) attestation pipeline are larger commitments. The harness is built for personal use. the SBOM deliverable is deferred as a post-launch operational step. A reader running a harness in a regulated environment may need to land both.
 
-### §10.3 Not a substitute for OS-level hardening
+### §9.3 Not a substitute for OS-level hardening
 
 The harness assumes FileVault disk encryption, System Integrity Protection, and Gatekeeper are enabled on macOS. Equivalent assumptions hold for Jetson and Windows. A machine with disk encryption disabled, SIP disabled, or Gatekeeper bypassed sits below the harness's threat model. The harness defends against software-layer attacks. the OS defends against physical-access and disk-recovery attacks.
 
-### §10.4 Not a guarantee against novel attacks
+### §9.4 Not a guarantee against novel attacks
 
 Three residual risks carry post-launch reconsideration triggers:
 
@@ -1280,19 +1358,33 @@ Three residual risks carry post-launch reconsideration triggers:
 
 The harness defends against the threats in `foundation/01-threat-model.md`. Novel attack classes that the threat model does not anticipate carry residual risk by definition. The discipline against novel classes is the post-launch revision cadence: when a new threat class is published, the harness reads the threat, decides whether the existing defenses cover it, and either accepts or addresses the gap in a commit.
 
-### §10.5 Not a defense against a determined attacker with prior knowledge
+### §9.5 Not a defense against a determined attacker with prior knowledge
 
 The harness is built for general-threat defense. A determined adversary with insider knowledge of Rock's habits and the specific Mac harness configuration could find gaps the harness does not cover. Examples: a phishing payload that lands a `~/.claude/CLAUDE.md` edit through a social-engineering vector outside the harness's protection class. a supply-chain compromise of a dependency the harness has already pinned and audited. a behavioral pattern in Claude Code that the runtime documentation has not yet surfaced.
 
-The discipline against this class is the periodic re-audit cadence (§9.6) plus the documented out-of-scope list (this section) plus the willingness to update the threat model when the threat surface shifts. Targeted adversarial work would justify a different harness designed against that specific threat model.
+The discipline against this class is the periodic re-audit cadence (§8.7) plus the documented out-of-scope list (this section) plus the willingness to update the threat model when the threat surface shifts. Targeted adversarial work would justify a different harness designed against that specific threat model.
 
-### §10.6 Not a guarantee of zero friction
+### §9.6 Not a guarantee of zero friction
 
 Every layer of defense adds cache footprint, friction, or maintenance burden. The Quality Contract's QC.2 (tight code, no scope expansion) is the discipline that holds completeness in check. A perfectly defended harness with deny rules for every conceivable failure mode would have friction the daily workflow could not absorb. The Phase 2 interview's "balance between security and friction" framing produced specific tradeoffs (T1 skipped, T6 deferred to allowlist). the harness's posture is calibrated, not maximal.
 
+### §9.7 Not a replacement for USER_GUIDE or JOURNEY
+
+This guide focuses on design rationale. The reader who wants to know what message fires when reads `USER_GUIDE.md`. The reader who wants the chronological build narrative reads `JOURNEY.md`. Each document answers a different question. attempting to consolidate them produces a document too long for any single audience.
+
+### §9.8 Not a defense against Claude Code itself going rogue
+
+The threat model assumes the runtime behaves as documented. A compromised Claude Code binary, a malicious update from Anthropic's distribution channel, or a backdoor in the runtime itself sits below the harness's threat model. The defenses against that class are the operating system's binary verification, the runtime's published checksums, and the engineer's choice of update cadence. The harness pins to a specific minor version range (QC.5) and re-validates on every minor bump, which catches schema and behavior changes. it does not catch a compromised binary at the pinned version.
+
+The reader concerned about runtime trust has three options. The first is to rebuild Claude Code from source after auditing the source. Anthropic publishes the source for the CLI runtime. the build is reproducible. The second is to verify the published binary's hash against an out-of-band reference (e.g., the project's GitHub releases page checksum). The third is to accept the trust assumption and rely on Anthropic's own software-supply-chain practices. The harness does not own this decision.
+
+### §9.9 Not a guarantee of forward compatibility
+
+The harness pins to Claude Code v2.1.x. A reader who upgrades to v2.2.x without re-validating may hit silent regressions. F09 (SessionStart exit-2 semantics) is the canonical worry: a hook that worked under v2.1.138 may behave differently under v2.2.0 because the runtime's exit-code handling for that event is not authoritatively documented. The QC.5 discipline catches this by triggering re-validation on every minor bump. forward compatibility across major versions is not guaranteed and would require a separate calibration effort.
+
 ---
 
-## §11. Glossary
+## §10. Glossary
 
 A short reference for terms used in this document. Each entry is one to three sentences and cross-references the section that uses the term in context.
 
@@ -1308,7 +1400,7 @@ A short reference for terms used in this document. Each entry is one to three se
 
 **Deny rule.** A pattern in `settings.json` `permissions.deny` that blocks matching tool calls. Evaluated before allow rules. See §3.1 and §4.9 through §4.14.
 
-**Drift check.** The `scripts/drift-check.sh` enforcement of QC.4b. Walks the CLAUDE.md hierarchy and sums line counts against the 400-line cap. See §5.3 and §9.1.
+**Drift check.** The `scripts/drift-check.sh` enforcement of QC.4b. Walks the CLAUDE.md hierarchy and sums line counts against the 400-line cap. See §8.2.
 
 **Hook event.** A lifecycle event the runtime fires synchronously, passing JSON to a registered hook script. The runtime exposes 27 events in v2.1.x. the harness uses six (PreToolUse, PostToolUse, SessionStart, Stop, plus two compaction events available). See §3.2.
 
@@ -1320,31 +1412,31 @@ A short reference for terms used in this document. Each entry is one to three se
 
 **Plan mode.** A read-only permission mode used during planning phases of a build. The runtime denies all write operations. the user reviews the plan before approving execution. See §3.1.
 
-**Quality Contract.** The six quality properties (QC.1 through QC.5, with QC.4 split into 4a and 4b) that bind every artifact in this repository. See §7.
+**Quality Contract.** The six quality properties (QC.1 through QC.5, with QC.4 split into 4a and 4b) that bind every artifact in this repository. See §6.
 
 **Reviewer subagent.** The Phase 5 Writer/Reviewer pattern's audit agent. Reads Phase 5 artifacts and returns findings with severity and evidence. See §4.18.
 
-**Session log.** The per-session JSONL file at `~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl`. Captures every tool call, model response, and user message. See §3.5 and §4.8.
+**Session log.** The per-session JSONL file at `~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl`. Captures every tool call, model response, and user message. See §3.6 and §4.8.
 
 **Settings.json.** The Claude Code configuration file. At the project level (`<repo>/.claude/settings.json`) or user level (`~/.claude/settings.json`). Holds permissions, hook registrations, plugin list, model defaults, and other configuration. See §4.2.
 
-**Skill.** A SKILL.md file with frontmatter and a body that loads on demand when its description matches the conversation. See §3.4, §4.15, §4.16, and §6.3.
+**Skill.** A SKILL.md file with frontmatter and a body that loads on demand when its description matches the conversation. See §3.4, §4.15, §4.16, and §5.3.
 
 **Subagent.** See Agent.
 
-**SuperClaude framework.** The legacy `@import` chain in Rock's prior `~/.claude/CLAUDE.md` covering `FLAGS.md`, `PRINCIPLES.md`, `RULES.md`, five `MODE_*.md` files, and six `MCP_*.md` files. Accepted as a Q3 exception to the drift-check cap pending future trimming. See §3.3 and §9.1.
+**SuperClaude framework.** The legacy `@import` chain in Rock's prior `~/.claude/CLAUDE.md` covering `FLAGS.md`, `PRINCIPLES.md`, `RULES.md`, five `MODE_*.md` files, and six `MCP_*.md` files. Accepted as a Q3 exception to the drift-check cap pending future trimming. See §3.3 and §8.2.
 
-**Threat model.** The document at `foundation/01-threat-model.md` that names assets, threat actors, out-of-scope items, and assumptions. The basis for the harness's calibrated decisions. See §8.
+**Threat model.** The document at `foundation/01-threat-model.md` that names assets, threat actors, out-of-scope items, and assumptions. The basis for the harness's calibrated decisions. See §7.
 
 **Writer/Reviewer pattern.** The Phase 5 build pattern where the main session writes artifacts and a reviewer subagent audits them before commit. See §4.18.
 
 **Bash deny rule.** A `permissions.deny` pattern of the form `Bash(prefix:argument-glob)` that blocks matching Bash commands. The Mac harness uses these for force-push, sudo, bypass mode, and root-targeted `rm -rf`. See §4.9 through §4.12.
 
-**Bypass mode.** The `--dangerously-skip-permissions` flag (or the `permissions.defaultMode: "bypassPermissions"` setting) that skips the runtime's prompt and gate logic. The Mac harness denies model-proposed invocations of the flag at the Bash rule layer; operator-initiated bypass at session start is permitted per Phase 2 Q9 (narrowed 2026-05-11), and `skipDangerousModePermissionPrompt: true` in `~/.claude/settings.json` is the documented expected state for that case. See §4.9.
+**Bypass mode.** The `--dangerously-skip-permissions` flag (or the `permissions.defaultMode: "bypassPermissions"` setting) that skips the runtime's prompt and gate logic. The Mac harness denies model-proposed invocations of the flag at the Bash rule layer. operator-initiated bypass at session start is permitted per Phase 2 Q9 (narrowed 2026-05-11), and `skipDangerousModePermissionPrompt: true` in `~/.claude/settings.json` is the documented expected state for that case. See §4.9.
 
-**Cache hit ratio.** The fraction of cached-prefix reads that hit the cache rather than re-reading the file. A high ratio (above 90%) is the QC.4a target. a sudden drop is the leading indicator of a timestamp-in-prefix violation. See §3.3 and §7.5.
+**Cache hit ratio.** The fraction of cached-prefix reads that hit the cache rather than re-reading the file. A high ratio (above 90%) is the QC.4a target. a sudden drop is the leading indicator of a timestamp-in-prefix violation. See §3.3 and §6.5.
 
-**Drift.** The general failure mode where documentation, configuration, and reality diverge over time. The drift-check script addresses one specific drift mode (cached prefix growth). the engineer's eye on commit diffs addresses others. See §9.5.
+**Drift.** The general failure mode where documentation, configuration, and reality diverge over time. The drift-check script addresses one specific drift mode (cached prefix growth). the engineer's eye on commit diffs addresses others. See §8.6.
 
 **Effort level.** The runtime setting that controls how thoroughly the model thinks before responding. Modes include low, default, high, and xhigh. The Mac harness uses `high` for daily-driver and `xhigh` for build phases. Effort affects token consumption and response time linearly with the setting.
 
@@ -1356,9 +1448,9 @@ A short reference for terms used in this document. Each entry is one to three se
 
 **`mcpServers`.** The settings key that registers MCP servers. Empty by default in the Mac harness. each addition goes through the six-check audit. See §3.4 and §4.14.
 
-**Pre-flight.** The phase-zero build step that verifies the working directory baseline before Phase 0 begins. Numbered `01-pre-flight.md` in the Mac prompts. Not "Phase 01" (which would be inconsistent with the "pre-flight, Phase 0, Phases 1 through 5" labeling that F07 in the Phase 5 audit standardized).
+**Pre-flight.** The phase-zero build step that verifies the working directory baseline before Phase 0 begins. Numbered `01-pre-flight.md` in the Mac prompts.
 
-**Pre-trust initialization.** The architectural class where code in `.claude/settings.json` or `.mcp.json` executes during project initialization before the user trust dialog appears. CVE-2025-59536 and CVE-2026-21852 are the canonical instances. The Mac harness defends with the SessionStart audit hook. See §4.7 and §8.3.
+**Pre-trust initialization.** The architectural class where code in `.claude/settings.json` or `.mcp.json` executes during project initialization before the user trust dialog appears. CVE-2025-59536 and CVE-2026-21852 are the canonical instances. The Mac harness defends with the SessionStart audit hook. See §4.7 and §7.3.
 
 **Phase.** A unit of the build sequence. The Mac build has seven phases: pre-flight, Phase 0 (goals and architecture), Phase 1 (discovery), Phase 2 (architecture interview), Phase 3 (deterministic layer), Phase 4 (extension layer), Phase 5 (wire and document).
 
@@ -1372,17 +1464,17 @@ A short reference for terms used in this document. Each entry is one to three se
 
 **Sandbox.** The runtime's filesystem and network isolation layer. The Mac harness's sandbox is disabled because Claude Code v2.1.138 exposes no CLI flag for it. the permission layer carries the enforcement. See `mac/ARCHITECTURE.md` §Sandbox.
 
-**Scope expansion.** A commit or phase output that produces more than the prompt named. The Quality Contract's QC.2 says scope expansion is a decision, not a habit. The Phase 5 reviewer subagent's job includes flagging unscoped additions. See §7.2.
+**Scope expansion.** A commit or phase output that produces more than the prompt named. The Quality Contract's QC.2 says scope expansion is a decision, not a habit. The Phase 5 reviewer subagent's job includes flagging unscoped additions. See §6.2.
 
 **Seed.** An external project the harness might draw from: a configuration repo, hook library, skill collection, security tool, MCP server. The seed evaluation methodology (`foundation/03-seed-evaluation-methodology.md`) is the two-stage process for deciding adoption. See §4.16.
 
-**Sub-command chain.** A Bash command with multiple commands joined by `&&`, `||`, `;`, or `|`. The 50-subcommand bypass class (T4) is the threat. the 30-subcommand cap is the Mac harness's deterministic defense. See §3.2 and §8.4.
+**Sub-command chain.** A Bash command with multiple commands joined by chain operators (AND-AND, OR-OR, statement separator, pipe). The 50-subcommand bypass class (T4) is the threat. the 30-subcommand cap is the Mac harness's deterministic defense. See §3.2 and §7.4.
 
 **Tool pool.** The set of tools the runtime presents to the model at session start, after deny rules and MCP allowlist filtering. The Claude Code v2.1.x default includes 9 always-loaded tools and 22 deferred tools loaded on demand via `ToolSearch`. See `mac/ARCHITECTURE.md` §Tool pool.
 
 **`ToolSearch`.** A built-in runtime tool that loads deferred tool schemas on demand. The Mac harness relies on this to keep the always-loaded tool pool small. specialized tools (TaskCreate, WebFetch, EnterPlanMode) load only when needed. See §3.4.
 
-**`additionalContext`.** The optional field in a SessionStart hook's `hookSpecificOutput` that contains text the runtime injects into the model's context. The Mac harness's `SessionStart-audit-claude-config.py` uses this as the durable defense: even if the runtime's exit-code handling changes across versions, the `additionalContext` text appears in the model's context where the model can see the audit failure. See §4.7 and §8.3.
+**`additionalContext`.** The optional field in a SessionStart hook's `hookSpecificOutput` that contains text the runtime injects into the model's context. The Mac harness's `SessionStart-audit-claude-config.py` uses this as the durable defense: even if the runtime's exit-code handling changes across versions, the `additionalContext` text appears in the model's context where the model can see the audit failure. See §4.7 and §7.3.
 
 **`additionalDirectories`.** The settings key that widens what counts as "inside the working directory" for the runtime's reversibility heuristics. A user who stores generated artifacts outside the project tree can add the directories here. writes there will not trigger the external-write confirmation. See §3.1.
 
@@ -1392,110 +1484,22 @@ A short reference for terms used in this document. Each entry is one to three se
 
 **`auto` permission mode.** The `permissions.defaultMode` value that activates the ML classifier. The Mac harness uses `auto` with a deterministic floor of deny rules and hooks underneath per Phase 2 Q1. See §3.1.
 
-**Cache lineage.** The relationship between the model used by a parent session and the model used by a subagent. Same-family lineage (Opus parent, Opus subagent) shares cache. cross-family does not. The QC.4a discipline. See §3.4 and §7.4.
+**Cache lineage.** The relationship between the model used by a parent session and the model used by a subagent. Same-family lineage (Opus parent, Opus subagent) shares cache. cross-family does not. The QC.4a discipline. See §3.4 and §6.4.
 
-**`claude_code_version_pin`.** The settings key that records the Claude Code minor-version range the harness is calibrated against. The Mac harness pins to `2.1.*`. Re-evaluation triggers on minor bump per QC.5. See §4.2 and §7.6.
+**`claude_code_version_pin`.** The settings key that records the Claude Code minor-version range the harness is calibrated against. The Mac harness pins to `2.1.*`. Re-evaluation triggers on minor bump per QC.5. See §4.2 and §6.6.
 
 **Deny-first ordering.** The evaluation order in `permissions.ts`: deny rules first, then allow rules, then mode-based decisions. The reason MCP allowlisting uses a structural mechanism (`mcpServers: {}`) rather than a blanket `mcp__*` deny. See §3.1 and §4.14.
 
 **`hookSpecificOutput`.** The JSON object a hook writes to stdout to carry an explicit decision. Contains `hookEventName`, `permissionDecision`, and `permissionDecisionReason` (for permission events) or `additionalContext` (for context-injection events). See §3.2.
 
-**Pre-commit hook.** A git hook that runs on `git commit` to validate the staged change. The Mac harness wires `gitleaks`, `semgrep`, `shellcheck`, `markdownlint-cli2`, and the `drift-check.sh` script into pre-commit. See §7.1 and §9.1.
+**Pre-commit hook.** A git hook that runs on `git commit` to validate the staged change. The Mac harness wires `gitleaks`, `semgrep`, `shellcheck`, `markdownlint-cli2`, and the `drift-check.sh` script into pre-commit. See §6.1 and §8.2.
 
 **Permission grant.** The mental model the harness applies to every dependency, every tool, every MCP server. Each addition is a permission grant: it adds capability and attack surface in equal measure. The seed evaluation methodology treats adoption as a permission grant with a maintenance commitment. See §4.16.
 
-**Phase output.** A markdown file under `phase-outputs/` that records what a phase produced and why. The discipline is "the reasoning chain lives in the phase outputs, not in the engineer's memory."
-
 **SessionStart audit registry.** The `~/.claude/audited-hashes.json` file that the SessionStart hook reads. Maps SHA-256 hashes to audit metadata (path, audit date, auditor, optional note). See §4.7.
 
-**Verification commands.** The bash invocations in each hook script's header that demonstrate the hook's expected behavior. Re-run after every Claude Code minor bump to catch schema changes. See §6.1 and §9.6.
+**Verification commands.** The bash invocations in each hook script's header that demonstrate the hook's expected behavior. Re-run after every Claude Code minor bump to catch schema changes. See §5.1 and §8.7.
 
 ---
 
-## §12. Reading paths summarized
-
-A reader who finished this document linearly has the full mental model. Most readers will not read linearly. The reading-path summaries from §0 are the navigation. the cross-reference table below is the lookup.
-
-| If the reader is... | Read first | Then | Then |
-|---|---|---|---|
-| New to Claude Code | §1 | §2 | §3 |
-| Building a fork | §3 | §5 | §6 |
-| Auditing this harness | §1.2-§1.3 | §4 | §7, §8 |
-| Investigating one specific decision | §11 | The cross-referenced section | The cited phase output |
-| Deciding whether to deviate from a default | §5.4 | The relevant §4 subsection | The foundation document cited there |
-| Adding a new hook | §3.2 | §4.3-§4.8 (as templates) | §6.1 |
-| Adding a new deny rule | §3.1 | §4.9-§4.14 (as templates) | §6.2 |
-| Adding a new skill | §3.4 | §4.15-§4.16 (as templates) | §6.3 |
-| Adding a new subagent | §3.4 | §4.17-§4.18 (as templates) | §6.4 |
-| Registering a new MCP server | §3.4 | §4.15 | The skill's six-check audit |
-| Composing a defense for a new tool | §6.5 | §3 (for layer recall) | §8 (for the threat model) |
-| Debugging a misbehaving hook | §6.1 | §3.2 | The hook's verification commands |
-| Maintaining the harness over time | §9 | §7 (for the QC bar) | §9.6 (for the cadences) |
-
-The table is the document's API. The reader who wants the answer to a specific question can land on a section, follow the cross-references, and return to their work.
-
-## Appendix A: artifact inventory
-
-A flat list of the eighteen artifacts covered in §4, with their layer and threat citations. Useful as a reference card.
-
-| # | Artifact | Layer | Primary threat addressed |
-|---|---|---|---|
-| 1 | `mac/harness/CLAUDE.md` | Memory and cache (advisory) | Posture across all threats |
-| 2 | `mac/harness/settings.json` | Permission + extension | All registered defenses |
-| 3 | `PreToolUse-bash-cap-subcommands.py` | Hook | T4 (50-subcommand bypass) |
-| 4 | `PreToolUse-cached-prefix-write-gate.py` | Hook | T5 (cache poisoning) |
-| 5 | `PreToolUse-external-write-gate.py` | Hook | Principle 3 (reversibility) |
-| 6 | `PreToolUse-supply-chain-bash-checks.py` | Hook | T2 (supply chain) |
-| 7 | `SessionStart-audit-claude-config.py` | Hook | T3 (pre-trust initialization) |
-| 8 | `Stop-prune-session-logs.py` | Hook (operational) | Disk-usage and privacy posture |
-| 9 | `bash-deny-dangerously-skip-permissions.md` | Permission | Principle 1 (bypass-mode-skips-defenses) |
-| 10 | `bash-deny-git-push-force.md` | Permission | Asset 1 (source code integrity) |
-| 11 | `bash-deny-rm-rf-root.md` | Permission | Principle 3 (reversibility) |
-| 12 | `bash-deny-sudo.md` | Permission | Principle 2 (least privilege) |
-| 13 | `filesystem-deny-write-secrets.md` | Permission | Asset 2 (secrets) |
-| 14 | `mcp-deny-server-prefix-default.md` | Permission (structural) | T6 (hostile MCP server) |
-| 15 | `mcp-server-pre-trust-audit/SKILL.md` | Extension (skill) | T6 (hostile MCP server, process-level) |
-| 16 | `seed-evaluation/SKILL.md` | Extension (skill) | QC.2 (no rubric scoring) |
-| 17 | `agents/inventory.md` | Extension (agent) | Discovery scan capability |
-| 18 | `agents/reviewer.md` | Extension (agent) | Phase 5 audit (Writer/Reviewer) |
-
-The eighteen artifacts are the calibrated minimum for the Mac build's threat model. A fork's artifact count will differ. the discipline is the calibration, not the count.
-
-## Appendix B: phase output index
-
-The phase outputs in `phase-outputs/` are the durable record of how the harness was built. Useful as a reference when the question is "why does artifact X look the way it does."
-
-- `PREFLIGHT.md`: the pre-flight environment baseline check.
-- `PHASE-0-CONTEXT.md` and `PHASE-0-DECISIONS.md`: goals and architecture decisions.
-- `PHASE-1-CONTEXT.md` and `INVENTORY.md`: discovery scan and findings.
-- `PHASE-2-CONTEXT.md`, `QUESTIONS.md`, `ANSWERS.md`, `CONFLICTS.md`: the architecture interview, including the 11 questions, the recorded answers, and any conflicts surfaced.
-- `PHASE-3-CONTEXT.md` and `PHASE-3-NOTES.md`: the deterministic layer build, deviations from Phase 2 prompts, deep evaluations of security-tool seeds.
-- `PHASE-4-CONTEXT.md` and `PHASE-4-NOTES.md`: the extension layer build, plugin selection rationale, MCP server pre-trust audit results.
-- `PHASE-5-CONTEXT.md` and `PHASE-5-AUDIT.md`: the wire-and-document phase, including the Reviewer subagent's 13 findings with dispositions.
-- `POST-MAC-1-CONTEXT.md` through `POST-MAC-6-NOTES.md`: the post-Phase-5 operational steps documented as they landed.
-
-A reader who wants the full rationale for any decision in this guide can land on the cited phase output and read the original. The reasoning is preserved. the artifacts are the receipt.
-
-## Appendix C: where to look next
-
-A reader who finished this document and wants more depth on a specific area has three further-reading paths.
-
-**For the runtime detail.** `research/Claude_Architecture.md` is the Liu et al. reverse-engineering study of Claude Code v2.1.88. Sections 5 (permissions), 6 (hooks), and 7 (compaction) are the most directly relevant to harness work. The document is long. section indexes make it readable by need.
-
-**For the harness-engineering discipline.** `research/Harness_Engineering_for_Claude_Code_A_Systems_Architecture_Analysis.md` is the SAGE doc. Section 2 (working definition), Section 4 (nine-component decomposition), and Section 5 (tradeoffs) frame the discipline. Section 9 carries practical recommendations.
-
-**For the NIST alignment.** `research/NIST_SP_800-218-Secure-Software-Development-Framework.md` is the SSDF v1.1. The four practice groups (PO, PS, PW, RV) carry specific practice IDs (PS.2.1, PW.5.1, RV.1.3, and so on) that QC.1 aligns against. The reader whose harness needs to demonstrate alignment to a regulator or auditor finds the language here.
-
-The three documents together are the load-bearing background. A reader who has read this guide plus those three documents has the full picture of what this harness is, why it is the way it is, and how to extend or audit it.
-
-## Final note
-
-The harness is alive. The Mac build completed 2026-05-11. Post-launch revisions land continuously, each in its own commit with a Context/Decision/Why/Tradeoff rationale block. The Quality Contract holds across revisions. The threat model gets re-evaluated when the threat surface shifts. The reader who returns to this document a year from now will find revisions that postdate the original publication. the writing rules and the structural decisions hold.
-
-If the reader finds an error, a stale claim, or a decision that no longer matches reality, the path is to file an issue or open a pull request. The repository's SECURITY.md carries the disclosure policy for vulnerability concerns. ordinary corrections go through normal review.
-
-The harness exists to serve work that matters. The discipline is the deliverable.
-
----
-
-*HARNESS_GUIDE.md is one of four documents that make up the public-facing documentation set. `README.md` answers "what is this." `JOURNEY.ipynb` carries the chronological build narrative. `foundation/` carries the platform-agnostic thinking the rest of the repository rests on. This guide answers "how does it work, how do I use it, how do I extend it."*
+*HARNESS_GUIDE.md is one of four documents that make up the public-facing documentation set. `README.md` answers "what is this." `USER_GUIDE.md` answers "what does it do day to day." `JOURNEY.md` carries the chronological build narrative. This guide answers "how is it designed and why."*
