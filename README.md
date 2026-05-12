@@ -1,6 +1,20 @@
 # harness-engineering
 
-A public reference for how Rock Lambros built his Claude Code harness from first principles across three machines. The repo carries the prompts, configuration, threat model, and reasoning that produced a working hardened harness on Mac, with the Jetson AGX Orin and Windows platforms scaffolded against the validated Mac pattern. Harness engineering treats the configuration around a code-generation model as load-bearing software in its own right, with its own threat model, version pins, and quality contract.
+## Read this first: educational, not a turnkey product
+
+**This repo documents how *I* (Rock Lambros) built *my* Claude Code harness on *my* specific machine, against *my* threat model and workflow.** It is educational. It is not a configuration to clone and run.
+
+The Mac side is validated against macOS 26.3 on Apple Silicon, Claude Code v2.1.138, the SuperClaude framework I had pre-loaded, and a specific set of seeds (`superpowers`, `mempalace`) adopted through the seed-evaluation methodology in `foundation/03-seed-evaluation-methodology.md`. Every calibration in this repo reflects a decision I made for my environment.
+
+The Jetson AGX Orin and Windows sections are scaffolded with cross-pollination from the Mac validation applied. Specific tooling, hook implementations, and per-platform calibrations for those platforms are TBD pending per-platform execution. Their `<NEEDS-PORT-VALIDATION>` markers identify exactly which assertions still need confirmation on the hardware.
+
+**Mileage will vary**, sometimes substantially, depending on your environment, threat tolerance, tool inventory, and Claude Code version. The patterns and reasoning here are reusable. The configuration is not.
+
+Read this repo as a worked example of one builder's reasoning. Adapt the patterns. Don't copy the configuration wholesale.
+
+## What this repo is
+
+A public reference for how I built my Claude Code harness from first principles across three machines. The repo carries the prompts, configuration, threat model, and reasoning that produced a working hardened harness on Mac, with the Jetson AGX Orin and Windows platforms scaffolded against the validated Mac pattern. Harness engineering treats the configuration around a code-generation model as load-bearing software in its own right, with its own threat model, version pins, and quality contract.
 
 The Mac harness is validated and operating. The Jetson and Windows sections are scaffolded with cross-pollination from the Mac validation applied. Both platform sections carry `<NEEDS-PORT-VALIDATION>` markers identifying assertions that need confirmation on the hardware.
 
@@ -106,6 +120,46 @@ Concrete numbers, recorded against the Mac section's first build completion on 2
 - Pre-commit pipeline wired with `gitleaks` v8.30.0 (secret scanning), `semgrep` v1.162.0 (SAST), and `shellcheck` v0.11.0.
 
 The Quality Contract holds across all of it. The drift-check script in `scripts/drift-check.sh` enforces the cached-prefix discipline as deterministic code rather than as advisory text in CLAUDE.md.
+
+## Tools and seeds I use
+
+The Mac harness depends on a specific external surface. The list below names what I run on this machine with repo links so readers can evaluate each on its own terms. Version pins are recorded in `mac/ARCHITECTURE.md` §Version pins. Per-seed adoption rationale lives in `mac/evaluations/deep-eval.md` and `phase-outputs/PHASE-4-NOTES.md`.
+
+**The runtime.**
+
+- [Claude Code](https://docs.claude.com/en/docs/claude-code) by Anthropic. Pinned to v2.1.* (currently 2.1.138).
+
+**Adopted seeds (plugins and skill collections).**
+
+- [`obra/superpowers`](https://github.com/obra/superpowers) by Jesse Vincent. MIT license. Adopted wholesale at v5.1.0 (14 skills + 1 SessionStart hook). The plugin's `using-superpowers` skill drives a lot of my routine workflow.
+- [`MemPalace/mempalace`](https://github.com/MemPalace/mempalace). MIT license. Adopted at v3.3.2. Provides cross-session structured memory (drawers, AAAK diaries, knowledge-graph triples) alongside Claude Code's native auto-memory.
+
+**Security tools wired into the pre-commit pipeline.**
+
+- [`gitleaks/gitleaks`](https://github.com/gitleaks/gitleaks) v8.30.0 for secret scanning.
+- [`semgrep/semgrep`](https://github.com/semgrep/semgrep) v1.162.0 for SAST against Python files (installed via pipx in a separate venv because the Anaconda install was broken).
+- [`koalaman/shellcheck`](https://github.com/koalaman/shellcheck) v0.11.0 for shell linting.
+- [`DavidAnson/markdownlint-cli2`](https://github.com/DavidAnson/markdownlint-cli2) for markdown linting.
+- [`pre-commit/pre-commit`](https://github.com/pre-commit/pre-commit) framework wiring.
+
+**Tools I evaluated but did not adopt at this build.**
+
+- [`anthropics/claude-code`](https://github.com/anthropics/claude-code) marketplace plugins beyond the calibrated minimum (context7, github, security-guidance, playwright, etc.). Each gets reviewed under the `mcp-server-pre-trust-audit` and `seed-evaluation` skills before landing in the daily-driver `~/.claude/`.
+- [`oraios/serena`](https://github.com/oraios/serena). Installed but disabled in my user settings. The user-disabled signal is the reason for deferral, not a quality assessment of the tool.
+- [`cosai-oasis/project-codeguard`](https://github.com/cosai-oasis/project-codeguard). Pre-1.0. Deferred per `foundation/03-seed-evaluation-methodology.md`'s pre-filter (revisit on 1.0 release).
+- [`affaan-m/everything-claude-code`](https://github.com/affaan-m/everything-claude-code) and [`disler/claude-code-hooks-mastery`](https://github.com/disler/claude-code-hooks-mastery). Read as references. Not integrated because my opinions did not line up cleanly with their patterns.
+
+**Cited research.**
+
+- Liu et al., reverse-engineering analysis of Claude Code v2.1.88. The `research/Claude_Architecture.md` document.
+- The SAGE document on harness engineering as a discipline. The `research/Harness_Engineering_for_Claude_Code_A_Systems_Architecture_Analysis.md` document.
+- NIST SP 800-218 v1.1, Secure Software Development Framework. The `research/NIST_SP_800-218-Secure-Software-Development-Framework.md` document.
+
+**Jetson AGX Orin tools: TBD.** Specific tooling decisions for the Jetson platform (sandbox primitive choice between AppArmor and SELinux, package manager strategy, credential store, network egress monitor) are deferred to per-platform Phase 0 execution. The Mac-validated patterns inform the questions. The per-platform answers land when the build runs against the actual hardware.
+
+**Windows tools: TBD.** Same shape as Jetson. The PowerShell-vs-Python question for hook scripts, the WSL2 posture decision, the credential store (Windows Credential Manager), and the network egress monitor (GlassWire / simplewall) all wait on per-platform Phase 0 execution.
+
+This list is not a recommendation that you adopt the same tools. It is documentation of what I chose for my environment. Your fork should run the same seed-evaluation discipline against your own threat model and tool inventory. You may end up with a different set.
 
 ## How the build was sequenced
 
