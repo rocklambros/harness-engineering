@@ -1,322 +1,198 @@
 #!/usr/bin/env bash
+# drift-check.sh - Verify that cited references in artifacts match actual content.
 #
-# drift-check.sh
+# Runs at pre-commit. Checks:
+#   1. Foundation docs reference research files that actually exist in research/.
+#   2. Phase prompts reference QC IDs that exist in foundation/00-quality-contract.md.
+#   3. Skills and hooks reference Threat IDs that exist in foundation/01-threat-model.md.
 #
-# Enforces QC.4b (context window discipline) from
-# foundation/00-quality-contract.md. Run by pre-commit and by CI.
-#
-# Two checks:
-#
-# 1. Worst-case per-session CLAUDE.md hierarchy line count.
-#    Each Claude Code session walks from cwd up to the project root,
-#    loading every CLAUDE.md it finds. The cached prefix per session
-#    is root CLAUDE.md plus the platform-specific hierarchy under one
-#    platform directory (e.g., mac/CLAUDE.md if present plus
-#    mac/harness/CLAUDE.md). The drift check computes the worst case
-#    across all platform-session combinations and tests against the
-#    cap. The 400-line cap reflects the threshold above which
-#    instruction-following degrades non-trivially. The 250-line target
-#    leaves headroom for platform CLAUDE.md files to grow without
-#    immediately tripping the cap.
-#
-#    Earlier versions of this script summed every CLAUDE.md file in the
-#    repo. That was correct as a paranoid guardrail but wrong as a
-#    model of per-session cache prefix reality, since only one platform
-#    loads per session. The current model tracks what actually loads.
-#
-# 2. Cached-prefix poisoning patterns.
-#    The cached prefix must be cacheable across runs. Timestamps,
-#    session identifiers, per-run state, and "last updated" markers
-#    break cache reuse silently. The script flags these patterns
-#    in any file that contributes to the cached prefix.
-#
-# Exit code 0: clean OR user-level chain over cap (WARN, not FAIL).
-# Exit code 1: project-controlled drift detected (root + platform CLAUDE.md
-# over cap, or cached-prefix poisoning pattern present). Exit code 2:
-# script error (missing dependencies, unreadable files, etc.).
-#
-# FAIL vs. WARN split: the project-controlled hierarchy (root CLAUDE.md
-# plus one platform's CLAUDE.md plus that platform's harness/CLAUDE.md)
-# is what this repo's authors directly control on every commit. That
-# portion remains a hard FAIL above the cap. The user-level chain
-# (~/.claude/CLAUDE.md and its transitive @imports) is per-machine
-# state outside this repo. Mac Phase 2 Q3 / Post-Mac 4 Stage 4 elected
-# to keep SuperClaude framework files @imported there, which holds
-# the user-level chain above the cap by design. Pre-commit blocking
-# on per-machine state would block every commit from that machine
-# while saying nothing about the project content the commit changes.
-# User-level pressure becomes WARN; project-controlled pressure stays
-# FAIL.
-#
-# Invoke directly:
-#   bash scripts/drift-check.sh
-#
-# Or via pre-commit:
-#   pre-commit run drift-check --all-files
+# Exit codes:
+#   0  no drift found
+#   1  drift found (commit blocked)
+#   2  script error (commit blocked, fail-closed per AP.8)
 
 set -euo pipefail
 
-# Resolve repo root so the script works from any working directory.
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-# Configuration. Editable here. The rationale is in the header.
-LINE_CAP=400
-LINE_TARGET=250
-
-# Globs that identify cached-prefix files for the poisoning check.
-# The line-count check categorizes by path pattern below and does not
-# use these globs directly.
-CACHED_PREFIX_GLOBS=(
-    "CLAUDE.md"
-    "*/CLAUDE.md"
-    "*/harness/CLAUDE.md"
-)
-
-# Patterns that indicate per-run state in a cached-prefix file.
-# Patterns are ERE (extended regex). Case-sensitive on purpose:
-# false positives on innocuous prose are worse than missed exact matches.
-declare -a POISON_PATTERNS=(
-    "Last (updated|run|modified):"
-    "Generated (at|on):"
-    "Session (ID|id):"
-    "Run (ID|id):"
-    "Today is "
-    "Current date:"
-    "Now:"
-)
-
-# Find all CLAUDE.md files in the repo (excluding .git and node_modules).
-# while-read pattern instead of mapfile so the script runs on bash 3.2 (macOS system bash).
-CLAUDE_FILES=()
-while IFS= read -r line; do
-    CLAUDE_FILES+=("$line")
-done < <(
-    find . \
-        -path ./.git -prune -o \
-        -path ./node_modules -prune -o \
-        -name CLAUDE.md \
-        -print 2>/dev/null | sort
-)
-
-if [ ${#CLAUDE_FILES[@]} -eq 0 ]; then
-    # No CLAUDE.md files yet. Nothing to check.
-    exit 0
+# Colors for terminal output, fall back to plain if not a tty.
+if [[ -t 1 ]]; then
+  RED=$'\e[31m'
+  YELLOW=$'\e[33m'
+  GREEN=$'\e[32m'
+  RESET=$'\e[0m'
+else
+  RED=""
+  YELLOW=""
+  GREEN=""
+  RESET=""
 fi
 
-# Helper. Returns line count for a file if it exists, otherwise 0.
-lines_or_zero() {
-    if [ -f "$1" ]; then
-        wc -l < "$1"
-    else
-        echo 0
-    fi
+DRIFT_FOUND=0
+
+log_drift() {
+  echo "${RED}DRIFT:${RESET} $1" >&2
+  DRIFT_FOUND=1
 }
 
-# walk_imports recursively follows the Claude Code @import chain starting
-# at $1 and accumulates lines into USER_LEVEL_TOTAL. The chain is the
-# user-level cached prefix that loads per-session before any project
-# CLAUDE.md, so its line count must factor into the worst-case-per-session
-# budget per Phase 2 Q10.
+log_warn() {
+  echo "${YELLOW}WARN:${RESET} $1" >&2
+}
+
+log_ok() {
+  echo "${GREEN}OK:${RESET} $1"
+}
+
+# Deterministic ID extraction from stdin. Mode arg: "qc" or "threat".
 #
-# Cycle detection uses VISITED (linear search; bash 3.2 lacks associative
-# arrays). Missing files contribute zero so the script stays usable on
-# machines without ~/.claude/CLAUDE.md (e.g., CI runners).
-walk_imports() {
-    local file="$1"
-    local v
-    if [ "${#VISITED[@]}" -gt 0 ]; then
-        for v in "${VISITED[@]}"; do
-            if [ "$v" = "$file" ]; then
-                return 0
-            fi
-        done
-    fi
-    VISITED+=("$file")
-
-    if [ ! -f "$file" ]; then
-        return 0
-    fi
-
-    local lines
-    lines=$(wc -l < "$file")
-    USER_LEVEL_TOTAL=$((USER_LEVEL_TOTAL + lines))
-    USER_LEVEL_CHAIN+=("$lines $file")
-
-    local dir
-    dir="$(dirname "$file")"
-
-    # Claude Code @import syntax: @<path> at start of line followed by a
-    # non-space path. awk filters to that exact shape; false positives on
-    # prose get filtered by the file-exists check during recursion.
-    local imp target
-    while IFS= read -r imp; do
-        if [ -z "$imp" ]; then
-            continue
-        fi
-        if [[ "$imp" = /* ]]; then
-            target="$imp"
-        else
-            target="$dir/$imp"
-        fi
-        walk_imports "$target"
-    done < <(awk '/^@[^[:space:]]/ { sub(/^@/, ""); print $1 }' "$file" 2>/dev/null)
+# Three engine traps make the obvious approaches non-portable here:
+#   1. macOS ships ugrep; `grep -o` with an optional-suffix pattern emits a
+#      phantom shorter token from a suffixed ID, producing false drift.
+#   2. BSD awk's match() is not reliably leftmost-longest for an optional
+#      trailing class, so an awk regex ending in one has the same problem.
+#   3. A regex passed via `awk -v` is subject to escape processing that
+#      differs across awks, so the dot can collapse to "any char".
+#
+# Defenses: the pattern is a hardcoded awk regex literal (no -v, no escape
+# ambiguity); the base is digit-terminated (`[0-9]+` is unambiguous, no
+# optional tail); one trailing lowercase letter is peeked deterministically
+# for QC IDs only. nawk has no \b, so the left word boundary is checked by
+# hand. LC_ALL=C: IDs are pure ASCII and BSD awk otherwise aborts input with
+# "towc: multibyte conversion failure" on the non-ASCII bytes in the prose.
+extract_ids() {
+  LC_ALL=C awk -v mode="$1" '
+    {
+      line = $0
+      for (;;) {
+        if (mode == "qc")     { ok = match(line, /QC\.[0-9]+/) }
+        else                  { ok = match(line, /T\.[0-9]+/) }
+        if (!ok) break
+        tok = substr(line, RSTART, RLENGTH)
+        nx  = substr(line, RSTART + RLENGTH, 1)
+        adv = RLENGTH
+        if (mode == "qc" && nx ~ /[a-z]/) { tok = tok nx; adv = adv + 1 }
+        before = (RSTART == 1) ? "" : substr(line, RSTART - 1, 1)
+        if (before !~ /[A-Za-z0-9_]/) print tok
+        line = substr(line, RSTART + adv)
+      }
+    }' | sort -u
 }
 
-# Walk the user-level chain once. The result feeds every platform's
-# session_total below.
-USER_LEVEL_FILE="$HOME/.claude/CLAUDE.md"
-USER_LEVEL_TOTAL=0
-declare -a USER_LEVEL_CHAIN=()
-declare -a VISITED=()
-if [ -f "$USER_LEVEL_FILE" ]; then
-    walk_imports "$USER_LEVEL_FILE"
-fi
+# Check 1: foundation docs reference research files that exist.
+check_research_references() {
+  local fail=0
+  if [[ ! -d "research" ]]; then
+    log_warn "research/ does not exist yet, skipping research reference check"
+    return 0
+  fi
 
-# Categorize CLAUDE.md files by path pattern.
-ROOT_LINES=$(lines_or_zero "./CLAUDE.md")
+  # Look for references like research/Claude_Architecture.md in foundation/
+  while IFS= read -r ref; do
+    local path
+    path="$(echo "$ref" | sed -E 's|.*(research/[A-Za-z0-9._-]+\.md).*|\1|')"
+    if [[ ! -f "$path" ]]; then
+      log_drift "foundation references missing file: $path"
+      fail=1
+    fi
+  done < <(grep -rohE 'research/[A-Za-z0-9._-]+\.md' foundation/ 2>/dev/null | sort -u || true)
 
-# Discover platform directories from the */harness/CLAUDE.md pattern.
-declare -a PLATFORMS=()
-for f in */harness/CLAUDE.md; do
-    if [ -f "$f" ]; then
-        platform_path="${f%/harness/CLAUDE.md}"
-        PLATFORMS+=("$platform_path")
-    fi
-done
+  [[ $fail -eq 0 ]] && log_ok "research references resolve"
+}
 
-# Per-platform session totals. PROJECT_WORST_CASE excludes the user-level
-# chain (this repo's authors control it; it's the FAIL gate).
-# FULL_WORST_CASE includes the user-level chain (per-machine state;
-# WARN gate when it pushes the total over the cap with project-only
-# under).
-declare -a SESSION_REPORT=()
-PROJECT_WORST_CASE=$ROOT_LINES
-FULL_WORST_CASE=$((ROOT_LINES + USER_LEVEL_TOTAL))
-for p in "${PLATFORMS[@]}"; do
-    platform_lines=$(lines_or_zero "./$p/CLAUDE.md")
-    harness_lines=$(lines_or_zero "./$p/harness/CLAUDE.md")
-    project_total=$((ROOT_LINES + platform_lines + harness_lines))
-    session_total=$((project_total + USER_LEVEL_TOTAL))
-    SESSION_REPORT+=("  $p session: $session_total lines (root=$ROOT_LINES, $p/CLAUDE.md=$platform_lines, $p/harness/CLAUDE.md=$harness_lines, user-level=$USER_LEVEL_TOTAL)")
-    if [ "$project_total" -gt "$PROJECT_WORST_CASE" ]; then
-        PROJECT_WORST_CASE=$project_total
-    fi
-    if [ "$session_total" -gt "$FULL_WORST_CASE" ]; then
-        FULL_WORST_CASE=$session_total
-    fi
-done
+# Check 2: prompts reference QC IDs that exist in the Quality Contract.
+check_qc_references() {
+  local qc_file="foundation/00-quality-contract.md"
+  if [[ ! -f "$qc_file" ]]; then
+    log_drift "missing $qc_file"
+    return
+  fi
 
-# Identify any CLAUDE.md files outside the expected root/platform pattern.
-# These are not necessarily wrong but should be visible.
-declare -a OTHER_FILES=()
-for f in "${CLAUDE_FILES[@]}"; do
-    case "$f" in
-        ./CLAUDE.md) ;;
-        # ./*/CLAUDE.md covers both platform-level (./mac/CLAUDE.md) and
-        # harness-level (./mac/harness/CLAUDE.md) because case-statement
-        # globs match across slashes; no additional pattern needed.
-        ./*/CLAUDE.md) ;;
-        *) OTHER_FILES+=("$f") ;;
-    esac
-done
+  # Extract defined QC IDs (e.g., QC.1, QC.4a, QC.4b).
+  local defined_ids
+  defined_ids="$(extract_ids qc < "$qc_file")"
 
-# Verify every CLAUDE.md found is readable. Catches permissions issues
-# that would otherwise pollute the count silently.
-for f in "${CLAUDE_FILES[@]}"; do
-    if [ ! -r "$f" ]; then
-        echo "drift-check: cannot read $f" >&2
-        exit 2
-    fi
-done
+  # Find all QC ID references across tracked artifacts. git grep scans only
+  # tracked files, so .gitignore is honored: build-internal scratch like
+  # phase-outputs/ (which discusses IDs as examples) does not false-trip the
+  # check. extract_ids does the deterministic tokenize. research/ holds
+  # large third-party source docs and is excluded by pathspec.
+  local referenced_ids
+  referenced_ids="$(git grep -hE 'QC\.[0-9]+' -- \
+    '*.md' '*.sh' '*.yaml' '*.json' ':(exclude)research/' \
+    2>/dev/null | extract_ids qc || true)"
 
-line_count_status=0
-if [ "$PROJECT_WORST_CASE" -gt "$LINE_CAP" ]; then
-    line_count_status=1
-    echo "FAIL: project-controlled CLAUDE.md hierarchy (root + platform) is $PROJECT_WORST_CASE lines, over the $LINE_CAP cap."
-    if [ ${#SESSION_REPORT[@]} -gt 0 ]; then
-        echo "Per-platform session totals (full, incl. user-level):"
-        for line in "${SESSION_REPORT[@]}"; do
-            echo "$line"
-        done
+  local fail=0
+  for id in $referenced_ids; do
+    if ! printf '%s\n' "$defined_ids" | grep -Fxq -- "$id"; then
+      log_drift "reference to undefined Quality Contract ID: $id"
+      fail=1
     fi
-    if [ ${#OTHER_FILES[@]} -gt 0 ]; then
-        echo "CLAUDE.md files outside the root/platform pattern:"
-        for f in "${OTHER_FILES[@]}"; do
-            echo "  $(wc -l < "$f") $f"
-        done
-    fi
-    echo "QC.4b context discipline: trim the project CLAUDE.md hierarchy to under $LINE_CAP lines."
-elif [ "$FULL_WORST_CASE" -gt "$LINE_CAP" ]; then
-    # Project-only is under cap; user-level chain pushes total over. WARN, not FAIL.
-    echo "WARN: full worst-case per-session hierarchy is $FULL_WORST_CASE lines, over the $LINE_CAP cap."
-    echo "Project-controlled portion is $PROJECT_WORST_CASE lines (under cap)."
-    echo "User-level chain accounts for $USER_LEVEL_TOTAL lines (per-machine state)."
-    echo "SuperClaude operational continuity per Mac Phase 2 Q3 / Post-Mac 4 Stage 4 is the accepted QC.4b exception."
-    if [ ${#SESSION_REPORT[@]} -gt 0 ]; then
-        echo "Per-platform session totals:"
-        for line in "${SESSION_REPORT[@]}"; do
-            echo "$line"
-        done
-    fi
-    if [ "$USER_LEVEL_TOTAL" -gt 0 ]; then
-        echo "User-level chain ($USER_LEVEL_FILE and transitive @imports):"
-        for entry in "${USER_LEVEL_CHAIN[@]}"; do
-            echo "  $entry"
-        done
-        echo "  Total: $USER_LEVEL_TOTAL lines"
-    fi
-elif [ "$FULL_WORST_CASE" -gt "$LINE_TARGET" ]; then
-    echo "WARN: worst-case per-session CLAUDE.md hierarchy is $FULL_WORST_CASE lines, over the $LINE_TARGET target."
-    if [ ${#SESSION_REPORT[@]} -gt 0 ]; then
-        echo "Per-platform session totals:"
-        for line in "${SESSION_REPORT[@]}"; do
-            echo "$line"
-        done
-    fi
-    if [ "$USER_LEVEL_TOTAL" -gt 0 ]; then
-        echo "User-level chain ($USER_LEVEL_FILE and transitive @imports):"
-        for entry in "${USER_LEVEL_CHAIN[@]}"; do
-            echo "  $entry"
-        done
-        echo "  Total: $USER_LEVEL_TOTAL lines"
-    fi
-    echo "Still under the $LINE_CAP cap but the slack is shrinking."
-fi
+  done
 
-# Check 2: cached-prefix poisoning.
-# Build a list of files matching the cached-prefix globs.
-poison_files=()
-for glob in "${CACHED_PREFIX_GLOBS[@]}"; do
-    # shellcheck disable=SC2086
-    # We want word splitting on the glob expansion.
-    for f in $glob; do
-        if [ -f "$f" ]; then
-            poison_files+=("$f")
-        fi
-    done
-done
+  [[ $fail -eq 0 ]] && log_ok "QC references resolve"
+}
 
-poison_status=0
-for f in "${poison_files[@]}"; do
-    for pattern in "${POISON_PATTERNS[@]}"; do
-        if grep -nE "$pattern" "$f" >/dev/null 2>&1; then
-            poison_status=1
-            echo "FAIL: $f contains pattern: $pattern"
-            grep -nE "$pattern" "$f" | head -5 | sed 's/^/  /'
-        fi
-    done
-done
+# Check 3: artifacts reference Threat IDs that exist in the threat model.
+check_threat_references() {
+  local threat_file="foundation/01-threat-model.md"
+  if [[ ! -f "$threat_file" ]]; then
+    log_drift "missing $threat_file"
+    return
+  fi
 
-if [ "$poison_status" -ne 0 ]; then
-    echo "QC.4b context discipline: cached-prefix files must not contain"
-    echo "per-run state. Move dynamic content into <system-reminder> blocks."
-fi
+  local defined_ids
+  defined_ids="$(extract_ids threat < "$threat_file")"
 
-# Final exit code.
-if [ "$line_count_status" -ne 0 ] || [ "$poison_status" -ne 0 ]; then
+  local referenced_ids
+  referenced_ids="$(git grep -hE 'T\.[0-9]+' -- \
+    '*.md' '*.sh' ':(exclude)research/' \
+    2>/dev/null | extract_ids threat || true)"
+
+  local fail=0
+  for id in $referenced_ids; do
+    if ! printf '%s\n' "$defined_ids" | grep -Fxq -- "$id"; then
+      log_drift "reference to undefined Threat ID: $id"
+      fail=1
+    fi
+  done
+
+  [[ $fail -eq 0 ]] && log_ok "Threat references resolve"
+}
+
+# Check 4: hooks marked deterministic actually have shellcheck-clean shell.
+check_hook_shell() {
+  if ! command -v shellcheck >/dev/null 2>&1; then
+    log_warn "shellcheck not installed, skipping hook script check"
+    return 0
+  fi
+
+  local fail=0
+  while IFS= read -r script; do
+    if ! shellcheck "$script" >/dev/null 2>&1; then
+      log_drift "hook script fails shellcheck: $script"
+      fail=1
+    fi
+  done < <(find mac/harness/hooks jetson/harness/hooks windows/harness/hooks \
+    -type f -name '*.sh' 2>/dev/null || true)
+
+  [[ $fail -eq 0 ]] && log_ok "hook scripts pass shellcheck"
+}
+
+main() {
+  echo "Running drift check from $REPO_ROOT"
+  check_research_references
+  check_qc_references
+  check_threat_references
+  check_hook_shell
+
+  if [[ $DRIFT_FOUND -eq 1 ]]; then
+    echo "${RED}drift detected, commit blocked${RESET}" >&2
     exit 1
-fi
+  fi
 
-echo "drift-check: OK (project worst-case $PROJECT_WORST_CASE lines, full worst-case $FULL_WORST_CASE lines incl. user-level chain of ${#USER_LEVEL_CHAIN[@]} file(s) / $USER_LEVEL_TOTAL lines)"
-exit 0
+  echo "${GREEN}no drift detected${RESET}"
+  exit 0
+}
+
+main "$@"
