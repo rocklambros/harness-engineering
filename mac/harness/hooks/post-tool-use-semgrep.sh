@@ -115,7 +115,7 @@ fi
 if ! command -v semgrep >/dev/null 2>&1; then
   log "ERROR semgrep not installed"
   echo "post-tool-use-semgrep: Semgrep is required but not on PATH." >&2
-  echo "Install the pinned Semgrep with 'pipx install semgrep==<pinned>'." >&2
+  echo "Install the pinned Semgrep with 'pipx install semgrep==1.162.0'." >&2
   echo "The harness fails closed per AP.8. Install Semgrep or remove this hook." >&2
   exit 2
 fi

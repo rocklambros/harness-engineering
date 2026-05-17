@@ -19,7 +19,7 @@ Each hook requires:
 
 `jq` for parsing the hook payload JSON. Install with `brew install jq` on macOS.
 
-`semgrep` for the post-tool-use hook. Install with `pip install semgrep` or `brew install semgrep`. Version pinned in `.pre-commit-config.yaml` at repo root.
+`semgrep` for the post-tool-use hook. The runtime hook uses a dedicated pipx environment pinned to a known version. Install it with `pipx install semgrep==1.162.0`. The hook prepends the pipx bin directory to PATH so a conda or Homebrew Python cannot shadow it. The post-generation pre-commit layer pins its own Semgrep mirror separately in `.pre-commit-config.yaml`. The two layers are independent and do not have to share a version.
 
 `shellcheck` for the drift check verification. Install with `brew install shellcheck`.
 
