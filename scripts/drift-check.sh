@@ -5,6 +5,8 @@
 #   1. Foundation docs reference research files that actually exist in research/.
 #   2. Phase prompts reference QC IDs that exist in foundation/00-quality-contract.md.
 #   3. Skills and hooks reference Threat IDs that exist in foundation/01-threat-model.md.
+#   4. Shell hooks pass shellcheck.
+#   5. Deployed ~/.claude/hooks copies match their tracked source byte for byte.
 #
 # Exit codes:
 #   0  no drift found
@@ -179,12 +181,55 @@ check_hook_shell() {
   [[ $fail -eq 0 ]] && log_ok "hook scripts pass shellcheck"
 }
 
+# Check 5: deployed hooks match their tracked source byte for byte.
+#
+# The live hooks under ~/.claude/hooks/ are copies of the tracked source in
+# mac/harness/hooks/. The on-disk name differs by the event-prefix convention
+# (post-tool-use-semgrep.sh deploys as PostToolUse-semgrep.sh) while the
+# content must stay identical. A source edit that never reaches the live copy,
+# or a live edit that never returns to source, is the silent-drift failure
+# this catches. Only deployed counterparts are compared. A source hook with no
+# live copy is simply not deployed on this host and is not drift. CI machines
+# and fresh adopters have no ~/.claude/hooks, so the check skips when the
+# directory is absent.
+check_deployed_hooks() {
+  local dst_dir="${HOME}/.claude/hooks"
+  if [[ ! -d "$dst_dir" ]]; then
+    log_warn "$dst_dir absent, skipping deployed-hook parity check"
+    return 0
+  fi
+
+  local fail=0 src base mapped cand
+  while IFS= read -r src; do
+    base="$(basename "$src")"
+    mapped="$base"
+    mapped="${mapped/#post-tool-use-/PostToolUse-}"
+    mapped="${mapped/#pre-tool-use-/PreToolUse-}"
+    mapped="${mapped/#session-start-/SessionStart-}"
+    mapped="${mapped/#pre-compact-/PreCompact-}"
+    mapped="${mapped/#stop-/Stop-}"
+    mapped="${mapped/#status-line./StatusLine.}"
+    for cand in "$base" "$mapped"; do
+      if [[ -f "$dst_dir/$cand" ]]; then
+        if ! cmp -s "$src" "$dst_dir/$cand"; then
+          log_drift "deployed hook differs from source: $cand vs mac/harness/hooks/$base"
+          fail=1
+        fi
+        break
+      fi
+    done
+  done < <(find mac/harness/hooks -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null || true)
+
+  [[ $fail -eq 0 ]] && log_ok "deployed hooks match tracked source"
+}
+
 main() {
   echo "Running drift check from $REPO_ROOT"
   check_research_references
   check_qc_references
   check_threat_references
   check_hook_shell
+  check_deployed_hooks
 
   if [[ $DRIFT_FOUND -eq 1 ]]; then
     echo "${RED}drift detected, commit blocked${RESET}" >&2
