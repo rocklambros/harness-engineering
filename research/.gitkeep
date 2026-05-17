@@ -1,0 +1,8 @@
+# This directory holds source research documents that ground the harness design.
+# Initial population happens via scripts/pre-flight.sh which moves the three
+# documents (Claude_Architecture, SAGE harness analysis, NIST SP 800-218) from
+# the repo root into this directory.
+#
+# Files in this directory are treated as read-only source material. Do not edit
+# them. To supersede a research reference, update foundation/04-research-references.md
+# and cite the new source.
