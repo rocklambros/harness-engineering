@@ -1,72 +1,167 @@
 # Seed Evaluation Methodology
 
-A "seed" is an external project the harness might draw from: an open-source Claude Code configuration repo, a hook library, a skill collection, a security tool with an MCP server. The set of plausible seeds is much larger than the set the harness can actually integrate. This document describes how candidates get evaluated.
+Every external tool, repo, or pattern considered for adoption goes through this rubric. The point is to kill obvious dead ends quickly and reserve deep evaluation for survivors.
 
-The methodology has one goal: kill obvious dead ends fast, then put real effort into the survivors. The failure mode it prevents is evaluation theater, the practice of producing detailed rubric scores for every candidate without ever running any of them.
+The methodology is two-stage: pre-filter, then deep evaluation. Most candidates die at pre-filter. The deep evaluation happens only for candidates that survive, and it happens in a sandbox by actually wiring the tool up, not by reading documentation.
 
-## The two stages
+This document includes a worked example at the bottom from the May 2026 evaluation of Arcanum-Sec/sec-context and Stanford SecureForge.
 
-### Stage 1: Pre-filter (~30 seconds per candidate)
+---
 
-Three questions. Any "no" rejects the candidate.
+## Stage 1: Pre-filter
 
-1. **License**: Is the license compatible with this repo's MIT license and with the candidate's intended use here? GPL-licensed tools cannot live in this repo's source tree; they can be invoked as subprocesses if their CLI license permits. SSPL, BSL, and similar source-available licenses are case-by-case.
-2. **Architecture support**: Does the candidate work on Mac (Apple Silicon), Jetson AGX Orin (ARM64 Linux), and Windows (x86_64)? Where it does not, is the gap acceptable for this component, or is a per-platform equivalent required?
-3. **Maintainership**: Has the project shipped a commit in the last 90 days, and does the issue tracker show real responses? Dead projects are not seeds. Pre-1.0 projects with active maintenance are acceptable; the harness will pin to the current version and re-evaluate on upgrade.
+The pre-filter takes 30 seconds per tool. It is intentionally fast and intentionally harsh. The cost of running pre-filter on 50 candidates is lower than the cost of running deep evaluation on one wrong candidate.
 
-Pre-filter results land in the phase output (typically `phase-outputs/INVENTORY.md` from Phase 1 or in the per-phase notes from Phase 3 and Phase 4). Each rejected candidate gets one sentence of rationale, not a paragraph.
+The pre-filter has three gates. Failure on any gate ends the evaluation.
 
-The 30-second target is real. Pre-filter is a triage step, not a deep dive. If a candidate takes 10 minutes to pre-filter, the methodology is failing and the question framing needs to be tightened.
+### Gate 1: License
 
-### Stage 2: Deep evaluation (sandbox integration)
+The tool's license must be compatible with the repo's MIT license for any code we'd actually import. CC BY 4.0 is acceptable for content we'd attribute, not for code we'd embed. GPL, AGPL, and non-commercial-only licenses are killers unless we're using the methodology only (re-implementing from the paper rather than embedding the code).
 
-Survivors move to Stage 2. The mechanism is integration, not scoring.
+If the license is unstated, the tool fails the gate. "Open source" without a LICENSE file is not open source.
 
-The candidate gets wired into a sandboxed session of the harness during Phase 3 (deterministic layer) or Phase 4 (extension layer), depending on what it touches. The Phase 3/4 prompt names the candidate and the integration scope. The session runs the candidate against three exercises:
+### Gate 2: Architecture support
 
-1. **A nominal task** that the candidate is supposed to do well.
-2. **An edge case** that exercises the failure mode the threat model worries about.
-3. **A no-op interaction** to measure the cost of having the candidate installed and idle (cache footprint, startup time, tool pool inflation).
+The tool must run on all three target architectures: macOS on Apple Silicon (ARM64), NVIDIA Jetson AGX Orin (ARM64 with Tegra extensions), and Windows on x86-64 (with WSL2 acceptable).
 
-The phase output records, for each candidate:
+A tool that's macOS-only fails the gate. A tool that's Linux-only is acceptable on Mac via Homebrew and on Jetson natively, and acceptable on Windows via WSL2.
 
-- What the candidate did well.
-- What it did badly, with the specific failure mode named.
-- What it cost (cache tokens, startup latency, tool slot, mental complexity).
-- The decision: integrate, integrate with constraints, reject.
+A tool that requires GPU acceleration not available on all three platforms fails the gate unless we accept the capability gap, which requires an explicit decision in AP.3.
 
-If the decision is integrate-with-constraints, the constraints become hook rules or deny patterns in the same phase. Constraints in CLAUDE.md only (advisory) do not count as constraints for this purpose; QC architectural principle 1 (hooks enforce, CLAUDE.md advises) applies.
+### Gate 3: Maintainership
 
-## What's not in the methodology
+The tool must show evidence of active maintenance. Concrete signals:
 
-**No rubric scoring.** Rubric scoring on harness seeds is mostly noise. The qualities that matter (cache behavior, interaction with the permission system, prompt injection resilience, drift over upgrades) do not score cleanly on a 1-to-5 scale, and the qualities that score cleanly on 1-to-5 (star count, README polish, presence of tests) are not the qualities that determine harness fit.
+Commits within the last 90 days, or a stated release cadence that's still being honored.
 
-**No exhaustive matrix.** A 15-column matrix comparing 20 seeds across every conceivable dimension is the visible artifact of evaluation theater. The methodology rejects this output by design. The phase output is a short narrative per survivor, not a spreadsheet.
+Multiple contributors, or a single maintainer with a track record of multi-year sustained work.
 
-**No vendor pitch trust.** A vendor's claim that their product "works with Claude Code" is data, not evidence. The Stage 2 integration is the evidence.
+Issue response time under 30 days for high-severity issues.
 
-## Seeds slated for evaluation in this build
+A clear governance model for security disclosures.
 
-Listed in the CHECKPOINT and carried into the Phase 1 and Phase 3/4 prompts. Captured here as a snapshot; the live list is in the phase outputs.
+A tool with one commit ever, no contributors beyond the original author, and no security policy fails the gate. A tool with active maintenance but a single point of failure passes the gate but is flagged for the deep evaluation to weigh against alternatives.
 
-- **Configuration repos and skill libraries**: `obra/superpowers`, `affaan-m/everything-claude-code`, `disler/claude-code-hooks-mastery`, the official `anthropics/claude-code` skills and plugins.
-- **Security tools**: Semgrep (already installed), `gitleaks`, `trivy`, `syft` (SBOM), `grype`, `cyclonedx-cli`, `sigstore/cosign`, `osv-scanner`, `detect-secrets`.
-- **Specialized integrations**: `cosai-oasis/project-codeguard` (pre-1.0, integrating in a shape that allows future swap), MemPalace (already installed, evaluating against alternatives), Serena (already installed).
+---
 
-Each gets pre-filtered in Phase 1 or Phase 3 (depending on whether the discovery scan finds it on the machine). Pre-filter survivors get deep-evaluated in Phase 3 or Phase 4 as the layer matches.
+## Stage 2: Deep evaluation
 
-## What changes when a seed gets adopted
+Survivors of the pre-filter get wired into a Phase 3 or Phase 4 sandbox. The deep evaluation has five dimensions, each scored on a 1-5 scale. A candidate must score 3 or higher on every dimension to be adopted.
 
-Adoption produces three artifacts in the same commit:
+### Dimension 1: Capability fit
 
-1. The wiring change (config, MCP server registration, skill copy, hook script).
-2. The rationale, either in the commit message under "Why" or in the phase output. Names the failure mode the seed prevents and the alternative seeds rejected.
-3. The drift trigger: a line in `mac/ARCHITECTURE.md` (and equivalents) recording the seed's version pin and the next re-evaluation trigger (upstream major version, security advisory, periodic review date).
+Does the tool solve the actual problem, or does it solve a related problem we'd have to bend to match? Scored on how closely the tool's intended use case matches our use case.
 
-Adoption is the start of a maintenance commitment, not the end of an evaluation.
+A tool that solves exactly our problem scores 5. A tool that solves a superset and can be configured down scores 4. A tool that solves a subset and would need to be supplemented scores 3. A tool that solves a tangential problem we'd be bending into shape scores 1-2.
 
-## When the methodology is wrong
+### Dimension 2: Quality Contract alignment
 
-The methodology trades exhaustive coverage for speed. The known failure mode: a seed that would have been transformative gets rejected at the pre-filter because the maintainership signal looked wrong. The mitigation: the post-launch revision cadence is the second chance. Seeds that get rejected here can come back later when the signals change. The methodology does not produce a final verdict; it produces the current decision.
+Does the tool's behavior align with QC.1 through QC.5? Specifically:
 
-Trying to make this methodology produce a final verdict is how evaluation theater starts.
+QC.1: Does the tool produce auditable security outputs in a standard format (SARIF, CycloneDX, OSV)?
+
+QC.2: Does the tool's footprint match the problem, or does it bring far more than we need?
+
+QC.4b: Does the tool's context cost match its value? Tools that demand large context budgets need to deliver proportionally.
+
+QC.5: Does the tool pin its own dependencies, or does it float?
+
+### Dimension 3: Integration cost
+
+How much code does it take to integrate the tool into the harness? Scored on lines-of-glue, configuration complexity, and the number of moving parts that have to stay aligned across platform sections.
+
+A tool that integrates with a single binary call and one configuration file scores 5. A tool that requires a service running alongside Claude Code scores 2-3. A tool that requires custom scripting per platform scores 1.
+
+### Dimension 4: Replaceability
+
+If the tool fails (becomes unmaintained, changes license, ships a breaking change), how hard is it to replace? Scored on the structural commitment the harness makes to the tool.
+
+A tool we call through a generic interface (SAST runner that consumes SARIF) is highly replaceable: score 5. A tool that's deeply embedded in our hook scripts and skill content is poorly replaceable: score 2. A tool whose data formats are proprietary and can't be migrated scores 1.
+
+### Dimension 5: Maintenance burden
+
+How much ongoing attention does the tool demand? Scored on update cadence, breaking-change frequency, and the cost of keeping pinned versions current.
+
+A tool with one stable release per year and consistent CLI interfaces scores 5. A tool with monthly breaking changes scores 2. A tool that requires re-reading documentation every quarter scores 1.
+
+### Adoption decision
+
+A candidate that scores 3 or higher on every dimension is adopted. A candidate with any dimension below 3 is either rejected or has the failing dimension addressed before reconsidering.
+
+Tied candidates fall back to the principle in AP.6: adopt where possible, build where necessary. If two adoptable tools tie, pick the one with the smaller integration cost.
+
+---
+
+## Worked example: sec-context and SecureForge (May 16, 2026)
+
+### Candidate 1: Arcanum-Sec/sec-context
+
+Pre-filter:
+
+License: CC BY 4.0, attribution to Jason Haddix and Arcanum Information Security. Pass for content reference, not for code import.
+
+Architecture support: text-based markdown content, platform-agnostic. Pass.
+
+Maintainership: 12 commits, single-org (Arcanum-Sec), 573+ stars, recent activity 2025-2026. Pass with flag (single point of failure).
+
+Survived pre-filter, proceeded to deep evaluation.
+
+Deep evaluation:
+
+Capability fit: 3. The taxonomy covers the right anti-patterns for our threat model T.1, but the delivery mechanism (65K-100K token markdown docs) is not how we'd use it.
+
+QC alignment: 2. QC.4b fails if loaded wholesale; passes if used as content seed for a lazy-loaded skill.
+
+Integration cost: 4 if used as content seed, 1 if used as direct context import. We're using as content seed.
+
+Replaceability: 5. It's reference content. Replacing it means re-curating from primary sources.
+
+Maintenance burden: 3. Content drifts as the CWE landscape shifts. Not a code dependency, but a content review cadence is needed.
+
+Adoption decision: adopted as content seed for the `security-review` skill. Attribution maintained per CC BY 4.0. Deep-pattern content extracted and rewritten to repo voice during Phase 4.
+
+### Candidate 2: Stanford SecureForge
+
+Pre-filter:
+
+License: MIT (confirmed via Rock May 16, 2026). Pass.
+
+Architecture support: Python pipeline, runs anywhere Python and Semgrep run. Pass.
+
+Maintainership: Stanford research artifact, paper published 2026. Stanford SISL lab has multi-year track record. Pass.
+
+Survived pre-filter, proceeded to deep evaluation.
+
+Deep evaluation:
+
+Capability fit: 3. The methodology (commit-time hardening via Semgrep feedback loop) maps cleanly to our threat model T.1. The artifact (optimized system prompts) maps poorly, because they target single-turn Python generation against specific model versions and we run Claude Code as a multi-turn agent.
+
+QC alignment: 4. SARIF-compatible Semgrep output, pins via pip, well-documented.
+
+Integration cost: 2 for the full pipeline, 4 for the Appendix C commit-time hardening pattern. We're adopting only the latter.
+
+Replaceability: 4. The Appendix C pattern is generic enough that any SAST-feedback hook implements it. Locking in to SecureForge specifically is unnecessary.
+
+Maintenance burden: 3. The pipeline ages with model versions; the Appendix C pattern is stable.
+
+Adoption decision: adopted as methodology, not as artifact. The commit-time hardening hook implements Appendix C using Semgrep. The optimized prompts are not adopted. The full pipeline is reserved for optional periodic runs against Rock's actual workload to discover Claude-Code-specific failure modes.
+
+### Combined integration
+
+The `security-review` skill (Phase 4) is seeded from the sec-context top-10 ranking and deep-pattern content, normalized to repo voice, attributed under CC BY 4.0.
+
+The `post-tool-use-semgrep.sh` hook (Phase 3) implements the SecureForge Appendix C commit-time hardening pattern.
+
+The full pre-commit SAST stack remains in place as the post-generation validation layer.
+
+This three-layer composition is the implementation of AP.2.
+
+---
+
+## What this methodology does not cover
+
+This methodology evaluates individual tools and patterns. It does not evaluate architectural decisions or build-vs-adopt questions at the harness level. Those go through the foundation docs and phase prompts.
+
+It does not evaluate the Anthropic platform itself, the Claude Code agent, or the underlying models. Those are accepted as the substrate the harness runs on.
+
+It does not produce paper rubrics divorced from integration. Reject "evaluation theater" where a tool scores 5 across the board on paper and then nobody actually wires it up. The Stage 2 evaluation is gated on actually integrating the tool into a sandbox.

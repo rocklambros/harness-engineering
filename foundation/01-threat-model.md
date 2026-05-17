@@ -1,58 +1,195 @@
 # Threat Model
 
-The harness is a piece of software that sits between Claude Code, a stochastic model, and three machines containing source code, secrets, SSH keys, browser cookies, and the ability to push to GitHub. The threat model treats the harness as defended territory, not as plumbing.
+The harness exists in an adversarial environment whether or not we acknowledge it. This document names the threats explicitly, ranks them, and maps them to the harness layers that mitigate them. It is binding on every Phase 3 (deterministic layer) and Phase 4 (extension layer) decision.
 
-This document names the threats this harness defends against, the threats it explicitly does not defend against, and the assumptions that make the defense work. When an assumption becomes false (the Claude Code version changes, a new CVE class appears, the operating environment shifts), the threat model gets revisited. Drift in the threat model is itself a threat.
+## Scope
 
-## Assets
+The threat model covers the harness as a system that produces and runs code at the direction of a developer using Claude Code. It does not cover the Anthropic platform itself, the underlying operating system, or general supply-chain attacks against pip, npm, and equivalent. Those threats exist and matter, but they're upstream of what the harness can influence.
 
-What the harness protects, in rough priority order:
+In scope:
 
-1. **Source code integrity**: Working copies on three machines and the public GitHub remote. Unauthorized writes, silent edits, and supply-chain compromise of dependencies all land here.
-2. **Secrets**: `.env` files, SSH keys, API tokens (Anthropic, GitHub, MCP server credentials), browser session cookies, password manager state.
-3. **Execution permissions**: The ability of any process on the machine to invoke `git push`, `npm publish`, `gh` CLI commands, `curl` against arbitrary endpoints, or `rm -rf`.
-4. **The cached prefix**: The CLAUDE.md hierarchy and any cache-eligible content. Cache poisoning by way of injected text is cheap and high-leverage.
-5. **The deterministic layer**: Hook scripts and deny rules. If an attacker rewrites a hook, every subsequent invocation runs against altered rules.
-6. **Reputation of the public repo**: This repo is public. Malicious changes to harness templates or rationale documents could harm anyone who reads them as reference.
+The behavior of Claude Code as a code-generating agent operating with permission to read, write, and execute against the developer's filesystem.
 
-## Threat actors
+Untrusted content that enters the agent context through web fetches, MCP tool results, fetched documents, copy-pasted content, and the contents of files the agent reads.
 
-- **Prompt injection via files and tool returns**: A document Rock asks Claude to read contains hostile instructions. A web search result contains them. An MCP tool return contains them. Probability of encountering this in normal use is high. The current Claude Code defenses (the ML-based prompt-injection classifier, the deny-first permission system) are partial mitigations, not complete.
-- **Supply-chain compromise**: A pinned dependency gets compromised upstream. A seed repo evaluated and integrated turns malicious in a later version. The pre-commit and SBOM workflow catches some of this. The seed evaluation methodology (`03-seed-evaluation-methodology.md`) treats integration as a permission grant, not a curiosity.
-- **Pre-trust initialization (CVE-2025-59536 class)**: The architectural class where code in `.claude/settings.json` or `.mcp.json` executes during project initialization before the user trust dialog appears. CVE-2025-59536 (CVSS 8.7) and CVE-2026-21852 (CVSS 5.3) were patched by Anthropic, but the user habit of opening cloned repos without auditing settings files survives the patch. Treating every cloned repo as hostile until its `.claude/` directory is reviewed is the defense.
-- **50-subcommand bypass class**: Commands chained with more than 50 subcommands fall back to a single generic approval prompt instead of per-subcommand deny-rule checks, due to UI-freeze performance constraints documented by Adversa.ai. The harness defends by capping subcommand chains in hook scripts and rejecting long chains at the PreToolUse stage.
-- **Cache poisoning of the prefix**: An attacker who can land text in CLAUDE.md or any cached-prefix file lands persistent influence over every future session. Read-only flags on harness files during runtime, pre-commit review of CLAUDE.md changes, and drift checks all push against this.
-- **Compromised or hostile MCP server**: An MCP server with broad tool exposure is a privilege escalation surface. The harness defaults to denying network egress to MCP servers not on an explicit allowlist, and treats every MCP server registration as a permission grant requiring review.
+The configuration surface of the harness itself: CLAUDE.md hierarchy, settings.json, hooks, skills, agents, rules, and any associated scripts.
 
-## Out of scope
+The artifacts produced by the agent during a session: code, configuration changes, commits.
 
-The harness does not defend against:
+Out of scope:
 
-- **Physical access to the unlocked machine**. Disk encryption and screen lock are the host operating system's job. If an attacker is at the keyboard, the harness is not the right layer.
-- **Anthropic itself going rogue**. The trust model assumes Claude Code's source code and the Anthropic API endpoints behave as documented. Verification of the binary against a known-good hash on every install is overkill for a personal harness; the harness pins the version and watches the changelog.
-- **Compromise of the GitHub credential during a push**. If Rock's GitHub token leaks, the harness cannot help. The token is treated as a tier-1 secret and rotated on a calendar schedule.
-- **Long-horizon adversaries with insider knowledge of Rock's habits**. The harness is built for general threats. Targeted adversarial work would require a different model.
+Compromise of Anthropic's infrastructure or model weights.
 
-## Assumptions
+Operating system compromise, kernel exploits, or hardware-level attacks against the developer's machine.
 
-The defenses above hold conditional on these assumptions. When any one becomes false, the threat model is stale.
+Insider threats from people with shell access to the developer's machine outside of Claude Code.
 
-1. Claude Code v2.1.x permission modes and hook event schemas remain as documented in the architecture reference (`research/Claude_Architecture.md`). The harness pins to a specific minor-version range to keep this stable.
-2. The five tool-authorization hook events (PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, PermissionDenied) fire as documented and cannot be silently disabled by a hostile setting.
-3. Deny rules in `permissions.ts` evaluate before allow rules, in deny-first order. A broad deny always wins over a narrow allow.
-4. The pre-commit framework actually runs the hooks declared in `.pre-commit-config.yaml`. A user who bypasses pre-commit (`git commit --no-verify`) defeats this assumption. The CI gate is the redundant defense.
-5. The operating system on each of the three machines applies file permissions as expected. Hook scripts marked read-only stay read-only without Rock's deliberate intervention.
+Generic supply-chain attacks on dependencies, except for the slopsquatting and dependency-confusion patterns the harness explicitly mitigates.
 
-## What "deterministic" buys
+## Threat catalog
 
-The single most important design decision in the harness is the line between deterministic and advisory enforcement. Hooks are deterministic: they run regardless of the model's mood, the prompt context, or whether the model believes it understood the instruction. CLAUDE.md is advisory: the model reads it and incorporates it probabilistically. Anthropic's internal research, cited in the architecture analysis, found 93% approval rates on permission prompts, which means user vigilance cannot be the primary defense. The 0.4% false-positive rate of the auto-mode classifier, cited in the same source, is an acceptable trade for the threat coverage that *model-proposed* `--dangerously-skip-permissions` invocations would give up; the Bash deny rule keeps that path closed regardless of whether the operator is also running in bypass mode at session start.
+The threats below are numbered T.1 through T.7. Each names an attacker, an objective, the attack surface, the resulting harm, and the harness layers that mitigate it.
 
-Operator-initiated bypass at session start is a separate decision from the threat model. The operator may launch Claude Code with `--dangerously-skip-permissions`, which causes the runtime to suppress the prompt-and-gate logic for the session and to persist `skipDangerousModePermissionPrompt: true` in `~/.claude/settings.json`. This harness permits that posture (Q9 narrowed 2026-05-11) and treats it as the documented expected state. The residual risk while in operator-initiated bypass — prompt injection in tool returns reaching shell without confirmation, asset class #1 (source code integrity) and #3 (execution permissions) — lands on the operator and is accepted as a documented exception. The model-proposed deny rule is the floor that prevents the model from entering bypass mode by itself even when the operator is not.
+### T.1 Benign-prompt vulnerability generation
 
-Every threat in this document is mitigated by one or more deterministic mechanisms. Advisory text in CLAUDE.md backs the determinism up; it does not substitute for it. When a phase prompt or harness component lands an instruction in CLAUDE.md that should also live in a hook, the Phase 5 Reviewer subagent flags the omission.
+Attacker: nobody, structurally. This threat is the model itself.
 
-## How threats land in the build
+Objective: not an objective. This is a failure mode.
 
-Phase 1 (discovery) maps what's currently on the machine that could be exploited or that already protects against these threats. Phase 2 (architecture interview) explicitly asks which threats Rock wants to enforce in hooks versus accept as residual risk. Phase 3 (deterministic layer) writes the hook scripts and deny rules. Phase 4 (extension layer) adds the skills, agents, and MCP servers and stress-tests each against this document. Phase 5 (wire and document) closes the loop, with the Reviewer subagent checking every artifact against this threat model.
+Attack surface: every prompt asking Claude to write code.
 
-The threat model is a living document. Post-launch, every revision lands with a commit message that names the threat or assumption the change addresses.
+Resulting harm: vulnerable code that passes tests, looks correct, and ships. The Liu et al. SecureForge research (arXiv:2605.08382) measures this at roughly 23% of benign coding prompts on frontier models including Claude Sonnet 4.6. The Arcanum sec-context research synthesizes 150+ sources estimating 40%+ of AI-generated code in production carries vulnerabilities.
+
+Mitigations:
+
+The `security-review` skill provides pre-generation guidance by lazy-loading anti-pattern context based on file type (Phase 4 extension layer, QC.1).
+
+The PostToolUse Semgrep hook provides commit-time hardening by feeding static analysis findings back to Claude for in-session fixes (Phase 3 deterministic layer, QC.1).
+
+The full pre-commit SAST stack provides post-generation validation as the final gate (Phase 3 deterministic layer, QC.1).
+
+This is the highest-frequency threat. The three-layer defense is the entire reason QC.1 exists in the shape it does.
+
+### T.2 Prompt injection through agent inputs
+
+Attacker: a third party who controls content the agent reads.
+
+Objective: induce the agent to take an action the developer did not authorize.
+
+Attack surface: web fetches, MCP tool results, fetched documents, files in the project, content pasted by the developer that originated elsewhere.
+
+Resulting harm: data exfiltration, unauthorized file writes, unauthorized command execution, credential disclosure.
+
+Mitigations:
+
+The agent treats all observed content from these sources as untrusted data, never as instructions. This is enforced by the system-level injection defense layer and reinforced in the project CLAUDE.md.
+
+Hooks at PreToolUse can block tool calls that match exfiltration patterns (large outbound transfers, credential reads from unexpected paths).
+
+The permission mode for read-heavy phases (Phase 1, Phase 2) is plan mode, which surfaces tool intent before execution.
+
+User confirmation is required for actions in the explicit-permission list (downloads, account creation, irreversible writes, public posts, sending messages).
+
+The Liu et al. Claude Architecture reverse engineering identifies the 50-subcommand bypass class. Hook registrations for PermissionRequest events provide a deterministic check against that class.
+
+### T.3 Cache-state leakage and replay
+
+Attacker: a passive observer of Anthropic API telemetry or someone who replays a cached prefix.
+
+Objective: learn information about the project that should not have been cached, or trigger behavior that the developer thought was scoped to a single session.
+
+Attack surface: cached prompt prefixes that include session-specific state, secrets, or sensitive paths.
+
+Resulting harm: information disclosure, unintended persistence of session state.
+
+Mitigations:
+
+QC.4b prohibits timestamps, run IDs, and per-run state in cached prefix content. `<system-reminder>` blocks are used for changing data.
+
+Secret scanning at pre-commit catches cases where secrets leak into committed CLAUDE.md or skill files.
+
+The CLAUDE.md hierarchy size limit (under 400 lines, target 250) keeps the cached prefix small enough to audit visually.
+
+### T.4 Hook bypass through subcommand or alternate-path execution
+
+Attacker: a malicious actor with prompt-injection footing in the agent.
+
+Objective: execute code or actions that bypass the deterministic hooks the harness relies on.
+
+Attack surface: the 50-subcommand bypass class documented in the Liu et al. Claude Architecture analysis, alternate tool invocations that don't trigger the registered hooks, race conditions in hook execution.
+
+Resulting harm: SAST gate bypass, unauthorized writes, unauthorized network egress.
+
+Mitigations:
+
+Hook registrations cover the bypass class by registering on the canonical and alternate event names where they differ.
+
+Hooks are written to fail closed: if the hook script errors, the action is blocked, not allowed.
+
+Hook scripts are themselves SAST-scanned at pre-commit. A hook that's been tampered with should fail the scan.
+
+The PreToolUse hook on shell tools logs the actual invocation for after-action review.
+
+### T.5 Dependency-supply-chain compromise
+
+Attacker: a malicious actor who controls a package the project depends on.
+
+Objective: execute code on the developer's machine through a poisoned dependency.
+
+Attack surface: pip, npm, brew, apt, and platform-equivalent package installs triggered by the agent.
+
+Resulting harm: arbitrary code execution at install time or runtime.
+
+Mitigations:
+
+QC.1 pins all dependencies to exact versions.
+
+Trivy and grype scan dependency manifests at pre-commit.
+
+OSV-Scanner cross-checks against the OSV database.
+
+Slopsquatting (the AI-generation pattern where models hallucinate package names that don't exist, which attackers then register) is a specific failure mode caught by the `security-review` skill at the pre-generation guidance layer, and by trivy/grype at the post-generation layer.
+
+SBOM generation at release time gives downstream consumers a verifiable list of what shipped.
+
+### T.6 Credential and secret exposure in generated code
+
+Attacker: not necessarily an attacker; this is often an accident.
+
+Objective: not an objective when accidental; if intentional, credential theft.
+
+Attack surface: generated code, configuration files, environment files, scripts that embed credentials.
+
+Resulting harm: credential disclosure, downstream account compromise.
+
+Mitigations:
+
+Gitleaks at pre-commit and in CI.
+
+The `security-review` skill flags credential-shaped strings in generated code.
+
+The CLAUDE.md security rules explicitly require template-with-placeholder patterns instead of inline credentials.
+
+Hooks at PreToolUse can block writes that match secret patterns before they hit disk.
+
+### T.7 Configuration drift and silent capability erosion
+
+Attacker: time and entropy.
+
+Objective: nothing intentional.
+
+Attack surface: the harness configuration itself, especially as Claude Code releases new versions with subtly different defaults.
+
+Resulting harm: the harness silently stops enforcing what the documentation says it enforces. The March 2026 cache TTL regression is the canonical example.
+
+Mitigations:
+
+QC.5 requires re-evaluation on Claude Code minor-version bumps.
+
+The `scripts/drift-check.sh` script at pre-commit checks for drift between cited references in artifacts and actual artifact content.
+
+Pin Claude Code to a minor-version range in the harness CLAUDE.md status section.
+
+JOURNEY.md entries on minor-version bumps document what changed and what was re-evaluated.
+
+## Threat ranking
+
+Ranked by expected loss (frequency times severity), informed by the data in `foundation/04-research-references.md`:
+
+T.1 (benign vulnerability generation) is the highest-frequency threat with moderate-to-high severity. It happens on roughly 1-in-4 generations and is invisible without static analysis.
+
+T.2 (prompt injection) is medium-to-high frequency for users who fetch external content during sessions, with potentially severe consequences when it lands.
+
+T.5 (dependency compromise) is low-frequency but high-severity, and the slopsquatting variant is rising in frequency as more code is AI-generated.
+
+T.6 (secret exposure) is medium-frequency with high blast radius depending on what leaks.
+
+T.7 (configuration drift) is low-frequency for any individual harness but high-cumulative-impact across the ecosystem.
+
+T.3 (cache leakage) is low-frequency in practice but worth the constraint cost because the mitigation is cheap.
+
+T.4 (hook bypass) is currently low-frequency but is the threat with the highest research-velocity. As the bypass class grows, this rises.
+
+## How the threat model gets revised
+
+When new research or in-the-wild incidents shift the ranking, the threat model is revised in its own commit with rationale and a JOURNEY entry. Downstream artifacts that reference threat IDs are updated in follow-up commits.

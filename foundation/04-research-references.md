@@ -1,79 +1,176 @@
 # Research References
 
-Three documents ground this repo. They live in `research/` and the repo cites them by section when a specific fact lands in a phase prompt, a foundation document, or a commit message. This file is the index: what each source is authoritative on, what kind of claim cites which document, and the citation conventions used in commits and prose.
+The artifacts in this repo are grounded in published research and primary documentation. This file catalogs the references that are cited across the foundation docs, phase prompts, and skill content. New references land here first, then get cited downstream.
 
-The discipline is straightforward. If a fact in any artifact in this repo comes from one of these sources, the artifact cites the source by document name and section. If a fact lives somewhere else (Anthropic blog posts, vendor docs, practitioner repos), the artifact names the URL or the repo. If a claim cannot be sourced, it does not get written.
+References are organized by what they bind. A reference cited in foundation docs is authoritative for the entire repo. A reference cited only in a specific platform's `evaluations/` folder binds only that evaluation.
 
-## research/Claude_Architecture.md
+---
 
-Liu et al., reverse-engineering study of Claude Code v2.1.88. Published 2026. Authoritative on the source-level behavior of Claude Code at that version.
+## R.1 Claude Code architecture and behavior
 
-Cite this document for:
+### R.1.1 Liu et al., Reverse engineering Claude Code v2.1.88
 
-- **Permission modes**: The seven modes (plan, default, acceptEdits, auto, dontAsk, bypassPermissions, bubble). Section 5.1.
-- **Hook events**: The 27 events defined in the source, the 15 with rich output schemas, the five that participate in tool authorization (PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, PermissionDenied). Sections 5.3 and 6.
-- **Permission pipeline**: Deny-first evaluation, pre-filtering by `filterToolsByDenyRules()`, the four-path permission handler (coordinator, swarm worker, speculative classifier, interactive). Section 5.2.
-- **Auto-mode classifier**: The `yoloClassifier.ts` flow, the TRANSCRIPT_CLASSIFIER feature flag, the 0.4% false-positive rate (Hughes, 2026). Section 5.3.
-- **CVE classes**: CVE-2025-59536 (CVSS 8.7), CVE-2026-21852 (CVSS 5.3), CVE-2025-54794, CVE-2025-54795. Pre-trust initialization ordering. Section 5.4 and footnote 3.
-- **50-subcommand bypass**: The Adversa.ai 2026 finding that >50 subcommands fall back to a single approval prompt. Section 5.4.
-- **Compaction pipeline**: Five-layer compaction, the PreCompact and PostCompact hook events. Section 7.
-- **Subagent delegation**: The Task tool, worktree isolation, the SubagentStart and SubagentStop events. Section 8.
-- **The 1.6% / 98.4% codebase ratio**: Decision logic versus operational harness. Section 4.
-- **The 27 hook events list**: Tool authorization, session lifecycle, user interaction, subagent coordination, context management, workspace events, notifications. Section 6.1.
+Internal location: `research/Claude_Architecture.md` (after pre-flight).
 
-Citation form in this repo:
-> *(Claude_Architecture.md §5.3)*
+Authoritative on: Claude Code permission modes, hook events (12 to 21 depending on count method), the compaction pipeline, the 50-subcommand bypass class, and the CVE classes documented in the analysis.
 
-## research/Harness_Engineering_for_Claude_Code_A_Systems_Architecture_Analysis.md
+Cited from:
 
-The "SAGE doc." Lambros and Claude, 2026. Authoritative on the working definition of harness engineering, the distinction from adjacent terms, and the nine-component decomposition.
+- `foundation/01-threat-model.md` (T.4, hook bypass)
+- `foundation/02-architectural-principles.md` (AP.1, deterministic over advisory)
+- `mac/ARCHITECTURE.md` (permission mode rationale, hook event coverage)
+- `jetson/ARCHITECTURE.md` (same)
+- `windows/ARCHITECTURE.md` (same)
 
-Cite this document for:
+When citing, reference the relevant section heading. Direct quotes are kept under 15 words per QC and copyright requirements.
 
-- **The working definition** of a Claude harness as a deterministic software envelope. Section 2.1.
-- **The Bayesian confidence rating** on the term (roughly 0.7). Section 2.1.
-- **Distinction from agent scaffolding, agentic runtime, agent framework, and eval harness**. Section 2.2.
-- **The strongest counterargument** that harness engineering is a marketing rebrand of scaffolding. Section 2.3.
-- **The nine components**: agent loop, instruction layer, tool pool, permission layer, context pipeline, sandbox, MCP integration, subagent delegation, persistence. Section 4.
-- **The five tradeoffs**: latency vs. accuracy, autonomy vs. control, context economy vs. capability, extensibility vs. attack surface, capability vs. reliability. Section 5.2.
-- **Design principles from the primary literature**: Schluntz and Zhang's four, Rajasekaran's five, the Liu et al. derivation of 13 from five values. Section 5.1.
-- **Security and governance**: Owasp Agentic Top 10, OWASP LLM Top 10, NIST AI RMF, MITRE ATLAS, ISO 42001 cross-walks. Section 7.
-- **Practical recommendations** for a personal harness. Section 9.
+### R.1.2 Anthropic Claude Code documentation
 
-Citation form in this repo:
-> *(SAGE §2.1)*
+External location: https://code.claude.com/docs
 
-## research/NIST_SP_800-218-Secure-Software-Development-Framework.md
+Authoritative on: official feature behavior, settings.json schema, hook registration syntax, MCP server configuration.
 
-NIST SP 800-218 v1.1, Secure Software Development Framework. Authoritative on the four practice groups and individual practice IDs that the harness aligns with.
+Cited from phase prompts and the harness CLAUDE.md files. Used in evaluations to verify behavior claims against official documentation.
 
-Cite this document for:
+### R.1.3 Anthropic prompt engineering documentation
 
-- **The four practice groups**: PO (Prepare the Organization), PS (Protect the Software), PW (Produce Well-Secured Software), RV (Respond to Vulnerabilities). Section 2.
-- **Specific practice IDs** when a QC property or phase prompt requirement maps to a practice. Common ones used in this repo:
-  - **PO.1.1**: Define security requirements for software development.
-  - **PS.1.1**: Protect all forms of code from unauthorized access and tampering.
-  - **PS.2.1**: Provide a mechanism for verifying software release integrity.
-  - **PS.3.1**: Archive and protect each software release.
-  - **PW.4.1**: Acquire and maintain well-secured software components.
-  - **PW.5.1**: Create source code by adhering to secure coding practices.
-  - **PW.7.1**: Configure the compilation, interpreter, and build processes.
-  - **PW.8.2**: Design and perform testing.
-  - **RV.1.1**: Gather information from software acquirers, users, and public sources on potential vulnerabilities.
-  - **RV.1.3**: Establish a vulnerability disclosure program. (Cited by `SECURITY.md`.)
-  - **RV.2.1**: Analyze each vulnerability to gather sufficient information.
+External location: https://docs.claude.com/en/docs/build-with-claude/prompt-engineering
 
-Citation form in this repo:
-> *(NIST SP 800-218 PW.5.1)*
+Authoritative on: Opus 4.7-specific guidance (literal instruction-following, scope discipline, parallel tool calls), the verbatim anti-overengineering block, AskUserQuestion tool usage, adaptive thinking, plan mode semantics.
 
-## What is not authoritative
+Cited from: all phase prompts in `*/prompts/`.
 
-Sources outside this list are evidence, not authority. Anthropic blog posts on Claude Code best practices, practitioner repos (`obra/superpowers`, `affaan-m/everything-claude-code`, `disler/claude-code-hooks-mastery`), vendor documentation, and Hacker News discussion threads can appear in phase outputs and rationale documents, but they do not have the standing to override a claim in the three authoritative documents above.
+---
 
-When the authoritative documents disagree (which happens, especially on counts: the Architecture doc lists 27 hook events, public Claude Code docs at various times have cited 12-21 depending on what they were counting), the repo cites both numbers, names the discrepancy, and uses whichever count fits the question being asked.
+## R.2 Security research on AI-generated code
 
-## When sources go stale
+### R.2.1 SecureForge (Liu, Einstein, Yang, et al., 2026)
 
-The Claude Code architecture document is a snapshot of v2.1.88. When Claude Code ships a minor or major version bump, the document is not automatically wrong, but specific claims about hook event schemas, permission modes, or the source-code organization may be. QC.5 (versioning posture) triggers a review of the architecture document on every Claude Code minor bump. The NIST SP 800-218 reference is v1.1; if NIST publishes v2 or v1.2, the cross-walks get reviewed. The SAGE doc is at version 0.1; the repo cites Section numbers, which should be stable through revisions.
+Citation: Houjun Liu, Lisa Einstein, John Yang, Joachim Baumann, Duncan Eddy, Christopher D. Manning, Mykel Kochenderfer, Diyi Yang. SecureForge: Finding and Preventing Vulnerabilities in LLM-Generated Code via Prompt Optimization. arXiv:2605.08382v1, May 2026.
 
-The discipline: cite the section, not the page, so revisions stay easy to track.
+License: MIT (confirmed source code at https://github.com/sisl/SecureForge).
+
+Internal location: paper attached during build, methodology referenced; source code not embedded.
+
+Authoritative on:
+
+The benign-prompt vulnerability rate measurement: ~23% on frontier models including Claude Sonnet 4.6 even when explicitly asked for secure code.
+
+The MCMC amplification methodology for failure-distribution discovery.
+
+The GEPA-based system-prompt optimization technique.
+
+The Appendix C commit-time hardening pattern: feed Semgrep findings back to the model with line and rule context for in-session fix, iterate until clean or retry cap.
+
+The transferability data: optimized prompts transfer zero-shot to in-the-wild SWE-chat prompts.
+
+Cited from:
+
+- `foundation/00-quality-contract.md` (QC.1, the data justifying the three-layer defense)
+- `foundation/01-threat-model.md` (T.1, benign vulnerability generation)
+- `foundation/02-architectural-principles.md` (AP.2, three-layer security)
+- `foundation/03-seed-evaluation-methodology.md` (worked example)
+- `mac/prompts/phase-3-deterministic-layer.md` (the PostToolUse Semgrep hook implementation)
+- `mac/harness/hooks/post-tool-use-semgrep.sh` (in-file comment citing Appendix C)
+
+Methodology adopted, optimized prompts not adopted. Rationale in seed evaluation methodology doc.
+
+### R.2.2 Arcanum-Sec sec-context taxonomy
+
+Citation: Jason Haddix, Arcanum Information Security. AI Code Security Anti-Patterns. https://github.com/Arcanum-Sec/sec-context. Synthesizes 150+ sources across academic papers, CVE databases, security blogs, and developer communities.
+
+License: CC BY 4.0.
+
+Internal location: referenced externally, not embedded. Pattern selection and ranking inform the `security-review` skill content.
+
+Authoritative on: the AI-code anti-pattern taxonomy, the top-10 ranking by frequency-severity-detectability score, and the supporting research citations (which are themselves valuable for verification).
+
+Cited from:
+
+- `foundation/00-quality-contract.md` (QC.1, the empirical basis for the pre-generation guidance layer)
+- `foundation/01-threat-model.md` (T.1, severity data)
+- `foundation/03-seed-evaluation-methodology.md` (worked example)
+- `mac/harness/skills/security-review/SKILL.md` (attribution and pattern source)
+
+Specific statistics from the README are cited with care. Some are well-supported primary research findings (slopsquatting rates from academic literature), others are looser developer-survey aggregates. Citations within the skill content note which is which.
+
+### R.2.3 Harness Engineering for Claude Code: A Systems Architecture Analysis (SAGE)
+
+Internal location: `research/Harness_Engineering_for_Claude_Code_A_Systems_Architecture_Analysis.md` (after pre-flight; original filename has a space that gets normalized).
+
+Authoritative on: the harness engineering definition, the Quality Contract framework, OWASP and NIST cross-walks, and the architectural shape of a production harness.
+
+Cited from:
+
+- `foundation/00-quality-contract.md` (QC.1 framework provenance)
+- `foundation/02-architectural-principles.md` (AP.1, AP.2 framing)
+- All platform `ARCHITECTURE.md` files (harness layer definitions)
+
+---
+
+## R.3 Standards and frameworks
+
+### R.3.1 NIST SP 800-218 Secure Software Development Framework
+
+Internal location: `research/NIST.SP.800-218-Secure-Software-Development-Framework.md` (after pre-flight).
+
+Authoritative on: SSDF practice IDs (PO.1.1, PS.1.1, PW.5.1, PW.7, PW.8, RV.1.3) that the harness aligns to.
+
+Cited from:
+
+- `foundation/00-quality-contract.md` (QC.1 SSDF alignment)
+- `mac/prompts/phase-3-deterministic-layer.md` (practice IDs in deliverable criteria)
+- `jetson/prompts/phase-3-deterministic-layer.md` (same)
+- `windows/prompts/phase-3-deterministic-layer.md` (same)
+
+Practice IDs are cited directly, not paraphrased.
+
+### R.3.2 MITRE Common Weakness Enumeration (CWE)
+
+External location: https://cwe.mitre.org
+
+Authoritative on: CWE IDs referenced in the `security-review` skill and in evaluations of SAST tool coverage.
+
+The CWE Top 25 list is the practical baseline for what the SAST stack must cover. The 2024 release is current as of build time.
+
+### R.3.3 CISA Secure by Design Pledge
+
+External location: https://www.cisa.gov/securebydesign/pledge
+
+Authoritative on: the framing for secure-by-design as a development practice rather than an after-the-fact check. Cited in the threat model and architectural principles.
+
+---
+
+## R.4 Reference repositories
+
+These are the public repositories whose patterns informed the harness shape. They are not dependencies. They are exemplars.
+
+### R.4.1 rocklambros/zerg
+
+External location: https://github.com/rocklambros/zerg
+
+Used for: README pattern (Why I Built This framing), CLAUDE.md pattern, voice and tone for first-person educational content.
+
+### R.4.2 rocklambros/TRACT
+
+External location: https://github.com/rocklambros/TRACT
+
+Used for: CLAUDE.md TRACT pattern (Role, code standards, security, constraints, things-that-break, operational, status). The TRACT acronym is borrowed and the pattern is applied here with the same structure.
+
+### R.4.3 Seed candidates evaluated
+
+The following tools were considered as seeds during the build. Each is evaluated in `mac/evaluations/` or platform-equivalent against the methodology in `foundation/03-seed-evaluation-methodology.md`.
+
+obra/superpowers, affaan-m/everything-claude-code, cosai-oasis/project-codeguard, disler/claude-code-hooks-mastery, anthropics/claude-code official skills and plugins, semgrep, gitleaks, trivy, syft, grype, cyclonedx-cli, sigstore/cosign, OSV-Scanner, detect-secrets, MemPalace, Serena.
+
+---
+
+## How references get added
+
+New research lands in `research/` (if it's a document) or is referenced externally (if it's a repo or documentation site).
+
+The reference is added to this file with citation, location, authoritative-on summary, and cited-from list.
+
+Citations in downstream files use the reference ID (R.1.1, R.2.2, etc.) where unambiguous, or full citation where the reader needs the context.
+
+When a reference is superseded, the entry is updated with a note pointing to the new reference. The old entry is not deleted; the reasoning chain may still depend on it.
