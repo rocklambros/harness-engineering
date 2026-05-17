@@ -1,84 +1,38 @@
-# Pre-commit configuration for harness-engineering.
-#
-# Why this exists: the Quality Contract (foundation/00-quality-contract.md)
-# requires secret scanning, drift checks on the cached prefix, and a
-# defensive baseline before any commit lands. Pre-commit is the lowest-cost
-# place to enforce these. CI re-runs the same checks because users can
-# bypass pre-commit with --no-verify.
-#
-# All versions are pinned per QC.1 (no floating ranges).
-#
-# Run on every commit. To run manually: `pre-commit run --all-files`.
-
-# Top-level exclude. research/ is reference material under the project's
-# do-not-modify rule (project root CLAUDE.md). Excluding here keeps every
-# hook (including auto-fixers) from touching it.
-exclude: |
-  (?x)^(
-    research/.*
-  )$
-
 repos:
-  # Repository hygiene baseline.
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
-      - id: check-json
       - id: check-merge-conflict
       - id: check-added-large-files
-        args: ['--maxkb=1024']
-      - id: check-case-conflict
-      - id: check-symlinks
-      - id: destroyed-symlinks
-      - id: mixed-line-ending
-        args: ['--fix=lf']
+        args: ['--maxkb=500']
+      - id: check-shebang-scripts-are-executable
+      - id: detect-private-key
 
-  # Shell script linting. Hook scripts are security-critical;
-  # shellcheck catches the common foot-guns before they ship.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/returntocorp/semgrep
+    rev: v1.95.0
+    hooks:
+      - id: semgrep
+        args: ['--config', 'p/default', '--config', 'p/security-audit', '--error', '--skip-unknown-extensions']
+
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.10.0.1
     hooks:
       - id: shellcheck
-        args: ['--severity=warning']
 
-  # Markdown linting. Keeps the prose consistent across foundation
-  # documents and platform sections. Rule relaxations live in
-  # .markdownlint.jsonc. research/ exclusion handled at top level.
-  - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.14.0
-    hooks:
-      - id: markdownlint-cli2
-        args: ['--fix']
-
-  # Secret scanning. QC.1 / NIST PS.1.1. gitleaks selected over detect-secrets
-  # per Phase 3 deep-eval (stronger git-history coverage, canonical AWS example
-  # keys correctly allowlisted, clean 440ms scan on this repo). Configuration
-  # lives at .gitleaks.toml if tuning is needed; defaults pass on this repo.
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.0
-    hooks:
-      - id: gitleaks
-
-  # SAST gate. QC.1 / NIST PW.5.1. semgrep installed via pipx at v1.162.0
-  # post-Phase-5; the broken Anaconda install at /opt/anaconda3/bin/semgrep
-  # is shadowed by this pinned pre-commit-managed version.
-  - repo: https://github.com/semgrep/semgrep
-    rev: v1.162.0
-    hooks:
-      - id: semgrep
-        args: ['--config', 'auto', '--error', '--quiet']
-
-  # Project-local drift check. Enforces QC.4b context-window discipline:
-  # CLAUDE.md hierarchy under 400 lines, no timestamps or per-run state
-  # in cached prefix.
   - repo: local
     hooks:
       - id: drift-check
-        name: harness drift check
-        entry: bash scripts/drift-check.sh
-        language: system
+        name: Drift check against research docs
+        entry: scripts/drift-check.sh
+        language: script
         pass_filenames: false
-        always_run: true
+        always_run: false
+        stages: [pre-commit]

@@ -7,6 +7,15 @@ Icon
 .Spotlight-V100
 .Trashes
 
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -16,72 +25,51 @@ __pycache__/
 .venv/
 venv/
 env/
+ENV/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
 *.egg-info/
-build/
 dist/
-.ipynb_checkpoints/
+build/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
 
 # Node
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
-.npm/
-.yarn/
+.npm
+.pnp/
+.pnp.js
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.project
-.classpath
-.settings/
-
-# Environment and secrets
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-*.crt
-*.p12
-*.pfx
-.secrets/
-secrets/
-.credentials
-
-# Claude Code local state that does not belong in the repo
-.claude/local/
-.claude/cache/
-.claude/sessions/
-
-# Build-internal phase outputs.
-# Pruned or moved before publish per CHECKPOINT.md.
+# Claude Code session artifacts (build-internal, not for publish)
 phase-outputs/
+.claude-cache/
+*.session.log
 
-# Pre-build planning artifacts and live project state.
-# These live in the working directory but are not committed.
-CHECKPOINT.md
-CONVERSATION_HISTORY.md
-PROJECT_ATTACHMENTS_CHECKLIST.md
-PROJECT_SYSTEM_PROMPT.md
+# Secrets and local config
+.env
+.env.local
+.env.*.local
+*.secret
+*.key
+secrets/
+credentials/
 
-# Working copies of research docs that diverge from the canonical versions in research/
-research/*.draft.md
-research/*.bak.md
+# Build / scan outputs
+*.sbom.json
+*.cdx.json
+*.sarif
+trivy-results.*
+semgrep-results.*
+gitleaks-report.*
 
-# OS and editor temp files
-*.tmp
-*.temp
-.directory
-Thumbs.db
-desktop.ini
+# OS / system
+*.log
+.history/
+.tmp/
+.cache/
