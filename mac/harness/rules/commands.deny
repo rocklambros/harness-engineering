@@ -1,0 +1,32 @@
+# Shell command patterns that the harness blocks at the rules layer.
+# Defense in depth: settings.json also blocks via the deny list.
+# One pattern per line. Patterns are partial-match against the command string.
+
+# Network-pipe-to-shell. The classic supply-chain footgun.
+curl * | sh
+curl * | bash
+curl * | zsh
+wget * | sh
+wget * | bash
+wget * | zsh
+
+# Destructive root or home wipes.
+rm -rf /
+rm -rf /*
+rm -rf ~
+rm -rf ~/
+rm -rf $HOME
+rm -rf ${HOME}
+
+# Privilege escalation. The harness operates in user space; sudo escapes scope.
+sudo
+doas
+
+# Disk operations against block devices.
+dd if=/dev/zero of=/dev/
+dd if=/dev/random of=/dev/
+mkfs
+
+# History tampering.
+history -c
+unset HISTFILE

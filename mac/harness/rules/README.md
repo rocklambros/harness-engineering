@@ -1,21 +1,35 @@
-# rules/
+# Rules
 
-Static permission rules for Claude Code. Each rule is a deny pattern or allow pattern that the Claude Code permission system evaluates at tool-pool assembly time and at every tool invocation.
+Deterministic policy that the hooks and Claude Code settings consult. The files in this directory are not interpreted by Claude itself. They are read by hook scripts and by the deny/allow lists in `settings.json.template`.
 
-Rules live here so that Phase 3 (deterministic layer) can write them as small, focused files with rationale comments, then Phase 5 wires them into `mac/harness/settings.json` through the `permissions.deny` and `permissions.allow` arrays.
+Per AP.1, rules that must not be bypassed live in this layer. Advisory guidance lives in the skills directory instead.
 
-## Naming convention
+## Files
 
-`<scope>-<verb>.md` per rule. Examples: `bash-deny.md`, `filesystem-write-outside-cwd.md`, `mcp-server-allowlist.md`.
+`paths.deny` — newline-separated path patterns that hooks block. Includes credential stores, system configuration, and user-secret directories. Loaded by `pre-tool-use-shell-audit.sh` and the deny list in `settings.json`.
 
-Each file holds the rule pattern, the threat or policy it addresses, the citation in `foundation/01-threat-model.md` or `foundation/02-architectural-principles.md`, and the test that verifies the rule actually fires.
+`paths.allow` — explicit allow list for sensitive operations. Defaults to the user's working directory. Override when a project legitimately needs broader access.
 
-## Security posture
+`commands.deny` — patterns for shell commands that must be blocked at the harness layer (defense in depth, since `settings.json` also blocks these). Includes `curl | sh` family, `rm -rf` against system paths, `sudo *`.
 
-Deny-first. A broad deny beats a narrow allow per Claude_Architecture.md §5.2 (`permissions.ts`, `toolMatchesRule()`). Server-prefix patterns (`mcp__server`) strip whole tool families from the model's view before invocation.
+`secrets.patterns` — regex patterns for detecting secrets in generated code. Supplementary to gitleaks. Add project-specific patterns here (internal API token formats, partner credential prefixes).
 
-Rules are deterministic. They run regardless of model mood, context-window pressure, or prompt design. The advisory equivalent in `harness/CLAUDE.md` reinforces rules but does not substitute for them (Principle 1 in `foundation/02-architectural-principles.md`).
+Note: each rule file is populated by Phase 3 against the specific Claude Code session needs. Initial templates are minimal. Extend through commits with rationale rather than freehand edits.
 
-## Phase coverage
+## How rules compose with skills
 
-Phase 3 populates this directory based on the threats Phase 2 elected to enforce in the deterministic layer. Phase 5 audits each rule against the threat model and the Quality Contract through the Writer/Reviewer subagent pattern.
+Rules say "this cannot happen." Skills say "here is what to do when this situation arises."
+
+A rule that blocks `eval()` calls in Python is in `paths.deny` or a similar deterministic enforcement.
+
+A skill that explains why `eval()` is dangerous and what to use instead lives in `harness/skills/security-review/patterns/command-injection.md`.
+
+Both serve the same threat. Different layer, different mechanism.
+
+## Updating rules
+
+Changes to rules are commits with rationale. The Why field cites the threat ID or Quality Contract property that justifies the rule.
+
+Removing a rule requires a stronger case than adding one. Document why the threat is now mitigated elsewhere (different layer, deprecated capability, accepted residual risk).
+
+The drift check verifies rule files are referenced by at least one hook or settings entry. Orphan rules surface as drift.

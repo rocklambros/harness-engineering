@@ -1,25 +1,46 @@
-# hooks/
+# Hooks
 
-Deterministic enforcement scripts that Claude Code fires at lifecycle events. The 27 hook events defined in Claude Code v2.1.88 (Claude_Architecture.md §6.1) span tool authorization, session lifecycle, user interaction, subagent coordination, context management, and workspace events. The five tool-authorization events with rich output schemas (PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, PermissionDenied) carry most of the enforcement weight.
+The deterministic enforcement scripts that Claude Code invokes on specific events. Hooks are the highest-confidence policy enforcement surface in the harness. Per AP.1, anything that must not be bypassed lives here, not in CLAUDE.md.
 
-Hooks live here because they are the deterministic layer. The advisory layer (CLAUDE.md, skill instructions) cannot substitute for a hook. Every rule that must hold every time lives in this directory.
+All hooks fail closed per AP.8: if the script errors, the action is blocked rather than silently allowed.
 
-## Naming convention
+## Hooks in this directory
 
-`hooks/<event>-<purpose>.sh` (or `.py` where shell is the wrong tool). Examples: `PreToolUse-bash-cap-subcommands.sh`, `PreToolUse-deny-external-writes.sh`, `SessionStart-load-skill.sh`, `PreCompact-preserve-decisions.sh`.
+| File | Event | Purpose |
+| --- | --- | --- |
+| `post-tool-use-semgrep.sh` | PostToolUse on Write, Edit, MultiEdit | Commit-time hardening. Runs Semgrep on the changed file and surfaces findings to the model. Implements SecureForge Appendix C (R.2.1). |
+| `pre-tool-use-shell-audit.sh` | PreToolUse on Bash | Logs shell invocations to `~/.claude-harness/shell-audit.log`. Audit only, does not block. |
+| `session-start.sh` | SessionStart | Runs drift check and Claude Code version check. Surfaces issues but does not block. |
+| `pre-compact-preserve.sh` | PreCompact | Writes active phase state to a preservation file so context survives compaction. |
 
-The event name in the filename matches the Claude Code hook event exactly (Claude_Architecture.md §6.1 lists all 27). The purpose name is kebab-case and explains what the script enforces, not how.
+## Dependencies
 
-Each hook script carries a header block with: the event it registers to, the rule it enforces, the threat it addresses (`foundation/01-threat-model.md` citation), the test that verifies the hook fires when expected, and the test that verifies the hook does not fire when not expected.
+Each hook requires:
 
-## Security posture
+`jq` for parsing the hook payload JSON. Install with `brew install jq` on macOS.
 
-Hooks are deterministic. They cannot be overridden by the model. The runtime fires them, the handler returns a decision (per the Zod-validated output schema for that event from `types/hooks.ts`), the runtime acts. A hook `allow` does not bypass subsequent rule-based denies or safety checks per Claude_Architecture.md §5.3.
+`semgrep` for the post-tool-use hook. Install with `pip install semgrep` or `brew install semgrep`. Version pinned in `.pre-commit-config.yaml` at repo root.
 
-Hook scripts pass shellcheck in pre-commit per QC.1 (PW.5.1). Hook scripts that fork subprocesses or make network calls explicitly justify the action in a header comment and in the commit message. Hook scripts run with the user's full privileges; the discipline of writing them like security-critical code is not optional.
+`shellcheck` for the drift check verification. Install with `brew install shellcheck`.
 
-The 50-subcommand bypass class (Adversa.ai 2026, per Claude_Architecture.md §5.4) gets its own PreToolUse hook here. Pre-trust initialization defenses (CVE-2025-59536 class) live in a SessionStart hook that refuses to load a project whose `.claude/settings.json` or `.mcp.json` has not been audited within the last N days, where N comes from Phase 2 interview.
+If any dependency is missing, the relevant hook exits non-zero with a clear error message. The harness fails closed.
 
-## Phase coverage
+## Logs
 
-Phase 3 populates this directory. Phase 5 verifies every hook against the threat model and produces the polished final form with the audit results.
+All hooks write to `~/.claude-harness/`. The directory is created on first invocation.
+
+`hook.log` is the canonical event log. Append-only. Each line is tab-separated: timestamp, severity, message.
+
+`shell-audit.log` is the dedicated shell-audit log. Same format, separate file to keep shell history reviewable independently.
+
+The logs are not rotated automatically. Set up `logrotate` if log volume becomes an issue.
+
+## Adding new hooks
+
+New hooks land in this directory with the same naming convention: `{event}-{purpose}.sh` for clarity.
+
+Each new hook is registered in `harness/settings.json.template`.
+
+Each new hook is referenced in this README's table and gets a Quality Contract trace in the script header comment.
+
+Hook scripts pass `shellcheck` cleanly. The drift check verifies this at pre-commit.
