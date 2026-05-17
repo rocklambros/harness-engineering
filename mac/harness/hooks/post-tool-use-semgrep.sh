@@ -94,37 +94,96 @@ case "${FILE_PATH}" in
     ;;
 esac
 
+# --- Pin to the isolated Semgrep, not conda or system Python -----------------
+
+# The harness Semgrep lives in a dedicated pipx environment with its own
+# pinned dependency set. A conda or Homebrew Python can shadow it on PATH,
+# and the modern Semgrep launcher resolves its pysemgrep helper through PATH
+# as well, so a drifted conda environment can break this gate even when the
+# pinned environment is healthy. Prepend the pipx bin directory first, so
+# both the launcher and pysemgrep resolve to the pinned environment. Set
+# HARNESS_SEMGREP_BIN_DIR when pipx installs elsewhere.
+
+HARNESS_SEMGREP_BIN_DIR="${HARNESS_SEMGREP_BIN_DIR:-${HOME}/.local/bin}"
+if [[ -x "${HARNESS_SEMGREP_BIN_DIR}/semgrep" ]]; then
+  PATH="${HARNESS_SEMGREP_BIN_DIR}:${PATH}"
+  export PATH
+fi
+
 # --- Verify Semgrep is installed ---------------------------------------------
 
 if ! command -v semgrep >/dev/null 2>&1; then
   log "ERROR semgrep not installed"
   echo "post-tool-use-semgrep: Semgrep is required but not on PATH." >&2
-  echo "Install with 'pip install semgrep' or 'brew install semgrep'." >&2
+  echo "Install the pinned Semgrep with 'pipx install semgrep==<pinned>'." >&2
   echo "The harness fails closed per AP.8. Install Semgrep or remove this hook." >&2
   exit 2
 fi
 
 # --- Run Semgrep -------------------------------------------------------------
 
+# macOS ships no GNU timeout. The earlier version hard-coded timeout and
+# masked the resulting command-not-found with a trailing true, so a missing
+# coreutils turned this gate into a silent no-op while misreporting the cause
+# as a Semgrep install problem. Resolve a portable wall-clock bound. Prefer
+# GNU timeout or gtimeout. Fall back to a perl fork and alarm shim, since
+# perl is part of the macOS base system. Fail closed per AP.8 if none exist.
+
+if command -v timeout >/dev/null 2>&1; then
+  run_bounded() { timeout "${SEMGREP_TIMEOUT_SECONDS}" "$@"; }
+elif command -v gtimeout >/dev/null 2>&1; then
+  run_bounded() { gtimeout "${SEMGREP_TIMEOUT_SECONDS}" "$@"; }
+elif command -v perl >/dev/null 2>&1; then
+  run_bounded() {
+    perl -e '
+      my $s = shift;
+      my $pid = fork();
+      if (!defined $pid) { exit 127 }
+      if ($pid == 0) { exec @ARGV or exit 127 }
+      my $timed_out = 0;
+      local $SIG{ALRM} = sub { kill "KILL", $pid; $timed_out = 1 };
+      alarm $s;
+      waitpid($pid, 0);
+      my $st = $?;
+      alarm 0;
+      exit 124 if $timed_out;
+      exit($st >> 8);
+    ' "${SEMGREP_TIMEOUT_SECONDS}" "$@"
+  }
+else
+  log "ERROR no timeout, gtimeout, or perl to bound the run"
+  echo "post-tool-use-semgrep: no timeout, gtimeout, or perl to bound the run." >&2
+  echo "Install coreutils with 'brew install coreutils'. Fails closed per AP.8." >&2
+  exit 2
+fi
+
 log "RUN file=${FILE_PATH} tool=${TOOL_NAME}"
 
-# Run with both rule packs. JSON output is parsed by jq for stable extraction.
-# stderr is suppressed in normal operation; surfaced on non-zero exit.
-SEMGREP_OUTPUT="$(timeout "${SEMGREP_TIMEOUT_SECONDS}" semgrep \
+# Both rule packs. JSON output is parsed by jq for stable extraction. No
+# trailing true, so the command substitution exit status reflects the real
+# Semgrep or runner result. That keeps the timeout case, exit 124, distinct
+# from a genuine no-output failure. set -uo pipefail without -e keeps the
+# script from aborting on the non-zero exit here.
+SEMGREP_OUTPUT="$(run_bounded semgrep \
   --config "${SEMGREP_CONFIG_DEFAULT}" \
   --config "${SEMGREP_CONFIG_SECURITY}" \
   --json \
   --quiet \
   --error \
   --skip-unknown-extensions \
-  "${FILE_PATH}" 2>/dev/null || true)"
-
-# Semgrep exit codes: 0 = no findings, 1 = findings, other = error.
+  "${FILE_PATH}" 2>/dev/null)"
 SEMGREP_EXIT=$?
 
+if [[ "${SEMGREP_EXIT}" -eq 124 ]]; then
+  log "ERROR semgrep timed out after ${SEMGREP_TIMEOUT_SECONDS}s file=${FILE_PATH}"
+  echo "post-tool-use-semgrep: Semgrep timed out after ${SEMGREP_TIMEOUT_SECONDS}s." >&2
+  exit 2
+fi
+
 if [[ -z "${SEMGREP_OUTPUT}" ]]; then
-  log "ERROR semgrep produced no output (exit=${SEMGREP_EXIT})"
-  echo "post-tool-use-semgrep: Semgrep produced no output. Check Semgrep install." >&2
+  log "ERROR semgrep no output (exit=${SEMGREP_EXIT}) file=${FILE_PATH}"
+  echo "post-tool-use-semgrep: Semgrep produced no output (exit=${SEMGREP_EXIT})." >&2
+  echo "Run 'semgrep --version' to diagnose. Fails closed per AP.8." >&2
   exit 2
 fi
 
