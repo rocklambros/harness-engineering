@@ -66,7 +66,7 @@ Produce the following artifacts. Each must trace to one or more Quality Contract
 
 ### 1. `mac/harness/CLAUDE.md`
 
-TRACT pattern (Role, code standards, security rules, core constraints, things-that-break, operational, status). Under 200 lines hard cap, target 160.
+Seven-section pattern (Role, code standards, security rules, core constraints, things-that-break, operational, status). Under 200 lines hard cap, target 160.
 
 This is the project-level CLAUDE.md that ships with the harness, distinct from the repo-root `/Users/klambros/harness-engineering/CLAUDE.md`. The harness CLAUDE.md goes into Claude Code projects that adopt the harness; the repo-root CLAUDE.md governs sessions against this repo.
 

@@ -70,7 +70,7 @@ Produce artifacts 1-7, run verification in item 8, commit in item 9.
 
 ### 1. `windows/harness/CLAUDE.md`
 
-TRACT pattern. Same as Mac with Windows-specific status section notes (WSL2 dependency, version pin, working-directory convention `/mnt/c/...`). Under 200 lines.
+Seven-section pattern (Role, code standards, security rules, core constraints, things-that-break, operational, status). Same as Mac with Windows-specific status section notes (WSL2 dependency, version pin, working-directory convention `/mnt/c/...`). Under 200 lines.
 
 ### 2. `windows/harness/settings.json.template`
 

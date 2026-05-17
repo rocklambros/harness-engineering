@@ -12,7 +12,7 @@ The harness is built, not adopted. Each platform section reproduces the same cap
 
 The architecture is documented in each platform's `ARCHITECTURE.md`. The shape is identical across platforms.
 
-Layer 1 is the project-level CLAUDE.md (`{platform}/harness/CLAUDE.md`). Advisory. Under 200 lines. TRACT pattern: Role, code standards, security rules, core constraints, things that break, operational, status.
+Layer 1 is the project-level CLAUDE.md (`{platform}/harness/CLAUDE.md`). Advisory. Under 200 lines. Seven sections: Role, code standards, security rules, core constraints, things that break, operational, status.
 
 Layer 2 is `settings.json` (`{platform}/harness/settings.json.template`). Deterministic. Configures permission modes, hook registrations, and trust-boundary policy.
 

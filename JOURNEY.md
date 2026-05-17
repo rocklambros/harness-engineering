@@ -2,6 +2,8 @@
 
 A running narrative of the harness build. Each entry is a checkpoint, not a status report. Reasoning lives here, decisions land in commits, locked decisions land in foundation docs.
 
+The build ran on a fixed loop sourced from Superpowers (Jesse Vincent, `obra`, MIT, https://github.com/obra/superpowers): brainstorm the design, write a plan, implement, review before merge. README.md "How this repo was built" explains why. Entries below are checkpoints within that loop.
+
 ## Format
 
 Each entry has a date heading and a short prose block. No bullet lists except where they materially aid comprehension. Three to seven items max if bulleted.

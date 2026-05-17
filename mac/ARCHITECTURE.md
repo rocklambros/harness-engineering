@@ -20,7 +20,7 @@ The harness is structured into five layers, each scoped to what it can enforce o
 
 ### Layer 1: Project CLAUDE.md
 
-The `harness/CLAUDE.md` file is the project-level operational context for every Claude Code session against this repo. It applies the TRACT pattern (Role, code standards, security rules, core constraints, things-that-break, operational, status).
+The `harness/CLAUDE.md` file is the project-level operational context for every Claude Code session against this repo. It follows a seven-section pattern (Role, code standards, security rules, core constraints, things-that-break, operational, status).
 
 Scope: advisory. The model reads it, weights its instructions, and may not perfectly follow them. Rules that must not be broken belong in the deterministic layers below.
 

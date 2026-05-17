@@ -10,7 +10,7 @@ I needed a Claude Code setup that I could trust to write code across three machi
 
 Adopting someone else's harness off the shelf was the obvious shortcut. I tried that. The off-the-shelf options collapse into three categories: opinionated stacks that assume a workflow I don't share, security guardrails that don't survive cross-platform parity, and personal repos that drift from upstream Claude Code faster than the maintainer can patch. Every one of them solved 60% of my problem and left the other 40% as homework. The homework is the interesting part.
 
-So I built it from scratch and wrote down why I made every choice. That writing is what this repo is.
+I built it from scratch and wrote down why I made every choice. That writing is what this repo is.
 
 ## What's in here
 
@@ -46,11 +46,21 @@ Each platform section opens with a `README.md` that routes to its `ARCHITECTURE.
 
 Commit history is part of the artifact. Every commit follows the template in `foundation/02-architectural-principles.md`. Read commits in order and the rationale chain is visible.
 
+## How this repo was built
+
+Every artifact here was produced with one development loop: brainstorm the design, write a plan, implement against the plan, review before merge. That loop is not mine. It comes from Superpowers, an agentic skills framework by Jesse Vincent (GitHub `obra`), MIT licensed, at https://github.com/obra/superpowers.
+
+Superpowers is not part of the shipped harness. It is the development discipline that produced the harness. The separation is deliberate. The harness is what you adopt. Superpowers is how this repo got written. Keeping the two distinct is the same boundary this README draws everywhere else.
+
+It earns the dependency. Superpowers injects a skill-discovery instruction at session start, so the brainstorm-before-code gate fires whether or not the operator remembers to ask for it. Its skills enforce the steps a model under time pressure skips: brainstorming separates intent from implementation before a line is written, the planning skill turns an agreed design into a reviewable plan, test-driven development and systematic debugging keep the implementation honest, and the code-review skills force a verification step before work is called done. For a repo whose thesis is that the reasoning is the artifact, a process that forces the reasoning to happen first and get written down is the right substrate.
+
+Credit and license are unambiguous. Superpowers is Jesse Vincent's work, MIT licensed, used here as an external tool with attribution. None of its code ships in the harness. The patterns this repo demonstrates stand on their own, and the repo would not exist in this shape without it.
+
 ## What ships in the harness
 
 Each platform produces a harness with the same five-layer shape:
 
-A project-level `CLAUDE.md` under 200 lines, TRACT-pattern (Role, code standards, security rules, core constraints, things-that-break, operational, status). A `settings.json` template with permission mode, hook registrations, and trust-boundary configuration. A deterministic rules layer that defines what cannot be bypassed by advisory prompting. A skills layer that lazy-loads guidance on demand. A hooks layer that enforces the deterministic gates and the SecureForge-style commit-time validation feedback loop. An agents layer for specialized sub-tasks.
+A project-level `CLAUDE.md` under 200 lines, organized into seven sections (Role, code standards, security rules, core constraints, things-that-break, operational, status). A `settings.json` template with permission mode, hook registrations, and trust-boundary configuration. A deterministic rules layer that defines what cannot be bypassed by advisory prompting. A skills layer that lazy-loads guidance on demand. A hooks layer that enforces the deterministic gates and the SecureForge-style commit-time validation feedback loop. An agents layer for specialized sub-tasks.
 
 Each layer is justified in `ARCHITECTURE.md` and traced to a Quality Contract property.
 
@@ -75,6 +85,7 @@ External sources that ground this work. The canonical, versioned list is `founda
 - **NIST SP 800-218 Secure Software Development Framework.** U.S. National Institute of Standards and Technology. Public domain. Quality Contract QC.1 aligns to its practices.
 - **MITRE Common Weakness Enumeration.** The MITRE Corporation. The security-review pattern files cite CWE identifiers from this catalog.
 - **CISA Secure by Design.** U.S. Cybersecurity and Infrastructure Security Agency. Informs the security posture.
+- **Superpowers.** Jesse Vincent (`obra`). MIT. https://github.com/obra/superpowers. The brainstorm, plan, implement, review workflow used to build this repo. Not part of the shipped harness. See "How this repo was built."
 
 The reverse-engineering analysis of Claude Code internals and the SAGE systems-architecture analysis that inform the design are cited as R.1.1 and R.2.3 in `foundation/04-research-references.md`.
 

@@ -155,7 +155,7 @@ Used for: README pattern (Why I Built This framing), CLAUDE.md pattern, voice an
 
 External location: https://github.com/rocklambros/TRACT
 
-Used for: CLAUDE.md TRACT pattern (Role, code standards, security, constraints, things-that-break, operational, status). The TRACT acronym is borrowed and the pattern is applied here with the same structure.
+Used for: the seven-section CLAUDE.md pattern (Role, code standards, security, constraints, things-that-break, operational, status). The section structure is borrowed from this repo's TRACT acronym and applied here with the same shape.
 
 ### R.4.3 Seed candidates evaluated
 

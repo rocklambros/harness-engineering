@@ -68,7 +68,7 @@ Produce the artifacts in items 1-7 below, then run the verification in item 8.
 
 ### 1. `jetson/harness/CLAUDE.md`
 
-TRACT pattern. Capability-equivalent to `mac/harness/CLAUDE.md` with Jetson-specific status section adjustments. Under 200 lines.
+Seven-section pattern (Role, code standards, security rules, core constraints, things-that-break, operational, status). Capability-equivalent to `mac/harness/CLAUDE.md` with Jetson-specific status section adjustments. Under 200 lines.
 
 Trace: QC.4b, T.7.
 
