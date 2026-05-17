@@ -58,18 +58,30 @@ Each layer is justified in `ARCHITECTURE.md` and traced to a Quality Contract pr
 
 The harness implements a three-layer defense:
 
-Pre-generation guidance flows through a security-review skill seeded from the Arcanum-Sec/sec-context anti-pattern taxonomy (CC BY 4.0, attributed to Jason Haddix). The skill loads pattern sections by file type, keeping the context tax small.
+Pre-generation guidance flows through a security-review skill seeded from the Arcanum-Sec sec-context anti-pattern taxonomy (CC BY 4.0, Jason Haddix and Arcanum Information Security, https://github.com/Arcanum-Sec/sec-context). On the Mac reference build the skill is fully populated with ten pattern files matching its manifest. Jetson and Windows carry the scaffold with identical structure, pending hardware validation. The skill loads pattern sections by file type, keeping the context tax small.
 
-Commit-time hardening runs Semgrep on changed files after every Write or Edit through a PostToolUse hook. Findings feed back to Claude with line and rule context so it fixes before continuing. This is the methodology from Liu et al. (SecureForge, MIT license) Appendix C, implemented as a deterministic hook rather than advisory guidance.
+Commit-time hardening runs Semgrep on changed files after every Write or Edit through a PostToolUse hook. Findings feed back to Claude with line and rule context so it fixes before continuing. This is the methodology from Liu et al. (SecureForge, MIT, arXiv:2605.08382, https://github.com/sisl/SecureForge) Appendix C, implemented as a deterministic hook rather than advisory guidance.
 
-Post-generation validation runs the full SAST stack (Semgrep, gitleaks, trivy, syft, grype) at the pre-commit gate. Same tools, different invocation context, redundancy by design.
+Post-generation validation runs the pinned pre-commit gate: the baseline pre-commit hooks, gitleaks for secrets, Semgrep for SAST, shellcheck for hook scripts, and the local drift check for reference integrity. The secondary supply-chain scanners (trivy, syft, grype) are evaluated and documented as optional in each platform's `evaluations/deep-eval.md`, not part of the pinned gate. Same Semgrep engine as the commit-time hook, different invocation context, redundancy by design.
 
 The reasoning for this layout is in `foundation/01-threat-model.md` and the Quality Contract section QC.1.
 
+## Attribution
+
+External sources that ground this work. The canonical, versioned list is `foundation/04-research-references.md`. The intellectual-property attributions below are explicit and binding:
+
+- **Arcanum-Sec sec-context anti-pattern taxonomy.** Jason Haddix and Arcanum Information Security. Licensed CC BY 4.0. https://github.com/Arcanum-Sec/sec-context. The `security-review` skill's pattern selection and ranking are derived from this taxonomy. Pattern prose is rewritten to this repo's voice with attribution preserved.
+- **SecureForge.** Liu, Einstein, Yang, Baumann, Eddy, Manning, Kochenderfer, and Yang. arXiv:2605.08382. MIT. https://github.com/sisl/SecureForge. The commit-time static-analysis feedback methodology is adapted from this work.
+- **NIST SP 800-218 Secure Software Development Framework.** U.S. National Institute of Standards and Technology. Public domain. Quality Contract QC.1 aligns to its practices.
+- **MITRE Common Weakness Enumeration.** The MITRE Corporation. The security-review pattern files cite CWE identifiers from this catalog.
+- **CISA Secure by Design.** U.S. Cybersecurity and Infrastructure Security Agency. Informs the security posture.
+
+The reverse-engineering analysis of Claude Code internals and the SAGE systems-architecture analysis that inform the design are cited as R.1.1 and R.2.3 in `foundation/04-research-references.md`.
+
 ## License
 
-MIT. Use the patterns. Cite the repo if you adapt them.
+MIT. Use the patterns. Cite the repo if you adapt them. The attributions above are independent of this license and survive any reuse.
 
 ## Status
 
-Build phase. Mac section validated through Phase 5. Jetson and Windows scaffolded through Phase 2, awaiting hardware validation for Phase 3-5. Revisions land as the harness evolves, with rationale in commit messages. See `JOURNEY.md` for the running narrative.
+Build phase. The Mac section is the validated reference build, including the now-populated Phase 4 security-review skill (ten pattern files plus the `security-reviewer` and `writer-reviewer` agents). Jetson and Windows are scaffolded through Phase 2, awaiting hardware validation for Phase 3-5. Revisions land as the harness evolves, with rationale in commit messages. See `JOURNEY.md` for the running narrative.

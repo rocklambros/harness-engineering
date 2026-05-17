@@ -16,9 +16,9 @@ Layer 1 is the project-level CLAUDE.md (`{platform}/harness/CLAUDE.md`). Advisor
 
 Layer 2 is `settings.json` (`{platform}/harness/settings.json.template`). Deterministic. Configures permission modes, hook registrations, and trust-boundary policy.
 
-Layer 3 is the deterministic rules in `{platform}/harness/rules/`. Path deny lists, command deny lists, secret patterns. Consumed by hooks; not interpreted by Claude.
+Layer 3 is the deterministic rules in `{platform}/harness/rules/`. Path deny lists, command deny lists, secret patterns. Consumed by hooks, not interpreted by Claude.
 
-Layer 4 is the skills in `{platform}/harness/skills/`. Advisory but lazy-loaded. The `security-review` skill is the primary one, scaffolded across all three platforms with identical content.
+Layer 4 is the skills in `{platform}/harness/skills/`. Advisory but lazy-loaded. The `security-review` skill is the primary one. On the Mac reference build it is fully populated with ten pattern files matching its `SKILL.md` manifest. Jetson and Windows carry the scaffold with identical structure, pending hardware validation.
 
 Layer 5 is the hooks and agents in `{platform}/harness/hooks/` and `{platform}/harness/agents/`. Hooks are deterministic. Agents are advisory and delegate-driven.
 
@@ -51,7 +51,7 @@ The WSL2 decision on Windows is documented in `windows/ARCHITECTURE.md` and pend
 
 ## Build sequence
 
-Every platform follows the same six-phase build sequence. Phase 0 establishes goals; Phases 1-5 build progressively from discovery to deterministic enforcement to advisory guidance to integration.
+Every platform follows the same six-phase build sequence. Phase 0 establishes goals. Phases 1-5 build progressively from discovery to deterministic enforcement to advisory guidance to integration.
 
 Phase 0 produces `phase-outputs/PHASE_0_GOALS.md`. Concrete success criteria, scope boundaries, out-of-scope decisions.
 
@@ -115,6 +115,6 @@ Copy the appropriate `settings.json.template` to `.claude/settings.json` and rep
 
 Copy `.pre-commit-config.yaml` and run `pre-commit install`.
 
-Run the project's existing tests plus the integration test in `{platform}/scripts/integration-test.sh` (created during Phase 5).
+Run the project's existing tests, then verify the wiring with `pre-commit run --all-files`, `./scripts/drift-check.sh`, and `shellcheck harness/hooks/*.sh`. These are the same checks `USER_GUIDE.md` Step 4 walks through.
 
 The full adoption walkthrough is in `USER_GUIDE.md`.

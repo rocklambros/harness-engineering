@@ -75,6 +75,6 @@ Pattern content in `patterns/` is rewritten to repo voice; the taxonomy and rank
 
 ## Status
 
-Phase 4 deliverable. Pattern files in `patterns/` are produced during Phase 4 execution, not pre-populated in this scaffold. Run `mac/prompts/phase-4-extension-layer.md` against your environment to populate the pattern content.
+Phase 4 complete on the Mac reference build. The ten pattern files in `patterns/` are populated and match the manifest above by filename, CWE ID, and file-type trigger. The `security-reviewer` and `writer-reviewer` agents are in `mac/harness/agents/`. Jetson and Windows carry the scaffold with identical structure, pending hardware validation.
 
-When pattern files are populated, the SKILL.md description above is the user-facing summary. Each pattern file lives independently and is loaded only when relevant.
+The SKILL.md description above is the user-facing summary. Each pattern file lives independently and is loaded only when relevant.

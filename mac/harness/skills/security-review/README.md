@@ -20,9 +20,11 @@ If the pattern needs new Semgrep rules to catch it, add the rule references to t
 
 ## How to verify
 
-Run the `mac/scripts/integration-test.sh` script. It writes a file with a known anti-pattern and verifies the skill content surfaces appropriately, then verifies the Semgrep hook catches the issue.
+Run `./scripts/drift-check.sh` from the repo root. It confirms the skill's QC and threat references resolve and the hook scripts pass shellcheck. Then confirm every pattern listed in `SKILL.md` has a matching file in `patterns/`, and that each pattern file states a CWE ID, a Semgrep cross-reference, and a primary source.
 
 If a pattern is documented in `SKILL.md` but has no corresponding `patterns/*.md` file, the drift check flags it.
+
+The automated integration test `mac/scripts/integration-test.sh` is a Phase 5 deliverable specified in `mac/prompts/phase-5-wire-and-document.md`. It is not yet created. The drift check and the manifest-to-`patterns/` consistency check above are the verification until it lands.
 
 ## Source attribution
 
