@@ -1,141 +1,141 @@
-# Phase 3 — Deterministic Layer (Windows) [SCAFFOLDED]
+# Phase 3: Deterministic Layer (Windows) — SCAFFOLDED, NEEDS HARDWARE VALIDATION
 
-**This prompt is scaffolded, not validated.** The structure mirrors `mac/prompts/phase-3-deterministic-layer.md`. Windows-specific details carry `<NEEDS-WINDOWS-PORT-VALIDATION>` markers that resolve when Rock executes the Windows build.
+The Windows equivalent of `mac/prompts/phase-3-deterministic-layer.md`. Scaffolded but not validated against actual Windows + WSL2. Running it produces output that should match Mac in structure, with `wsl.exe` invocation wrappers in the settings template and Windows-specific path additions in the deny lists.
+
+Validation work for this phase is itself a deliverable. Document in `phase-outputs/PHASE_3_VALIDATION.md`.
+
+---
 
 <role>
-You are writing the deterministic enforcement layer of the Windows harness: hook scripts, deny rules, sandbox configuration, permission-mode posture in `windows/harness/settings.json`. Every threat Phase 2 elected to enforce in hooks lands here. Every constraint that must hold every time the harness runs on Windows lands here.
+You are a senior harness engineer building the deterministic enforcement layer on Windows + WSL2. The capability surface must equal Mac. The implementation must use the WSL2 indirection per `windows/ARCHITECTURE.md`.
 
-This is the most consequential phase for harness security on Windows. The model has no veto over a hook. Hooks fire regardless of context, prompt design, or conversation length.
+Match the writing rules.
 </role>
 
 <effort>xhigh</effort>
-
-<mode>default mode (writes). Phase 3 produces hook scripts, deny rule files, and the settings.json fill.</mode>
-
+<mode>default</mode>
 <thinking>adaptive</thinking>
+<context_budget>Run /context at start. Plan for one compaction.</context_budget>
+<parallel_tool_calls>Parallel reads.</parallel_tool_calls>
+<scope>Strict.</scope>
 
-<context_budget>Run /context at start and end. Phase 3 reads several foundation documents, Phase 2 outputs, and `Claude_Architecture.md` for hook-event specifics. Record in `phase-outputs/PHASE-3-CONTEXT.md`.</context_budget>
+<context>
+Phase 2 locked the architecture. Read `phase-outputs/ANSWERS.md` and `windows/ARCHITECTURE.md` first.
 
-<parallel_tool_calls>
-Read inputs in parallel: `phase-outputs/ANSWERS.md`, `phase-outputs/INVENTORY.md`, `windows/ARCHITECTURE.md`, `windows/harness/settings.json.template`, `windows/harness/rules/README.md`, `windows/harness/hooks/README.md`, `foundation/01-threat-model.md`, `foundation/02-architectural-principles.md`, relevant sections of `research/Claude_Architecture.md`. Also read the Mac and Jetson equivalents if those builds have run.
-</parallel_tool_calls>
+Mac Phase 3 deliverables in `mac/harness/` are the reference. Windows differences:
 
-<scope>
-Apply only to:
-- `windows/harness/hooks/` (writes: one PowerShell, Python, or WSL2-bash script per hook, per Phase 2's language decision)
-- `windows/harness/rules/` (writes: one markdown file per rule)
-- `windows/harness/settings.json` (writes: populated settings file. Template stays unchanged.)
-- `windows/evaluations/deep-eval.md` (updates: integration results for security-tool seeds)
-- `phase-outputs/PHASE-3-CONTEXT.md` (writes)
-- `phase-outputs/PHASE-3-NOTES.md` (writes: rationale per hook and per rule)
+`settings.json.template` hook commands wrap bash scripts in `wsl.exe -e bash` invocations.
 
-Do not modify `foundation/`, `research/`, `windows/prompts/`, `windows/harness/CLAUDE.md`, `windows/harness/skills/`, `windows/harness/agents/`, `windows/ARCHITECTURE.md`, or `windows/README.md`.
-</scope>
+`paths.deny` extends with Windows credential paths (`AppData`, `LocalAppData`, registry export files).
 
-## What to do
+`commands.deny` extends with Windows-specific dangerous patterns (`powershell -EncodedCommand`, `reg add HKLM:\`, `wmic process call create`).
 
-Three kinds of artifacts: hook scripts, deny rule files, populated `settings.json`. Same as Mac and Jetson Phase 3 with Windows port validations.
+Hook scripts are byte-identical to Mac because they run inside WSL2.
 
-### Hook scripts
+The `session-start.sh` hook gets a WSL2 health-check section appended.
 
-For each threat Phase 2 elected to enforce in a hook, write a hook script in `windows/harness/hooks/`. Script language follows Phase 2's decision (PowerShell 5.1, PowerShell 7+, Python, or WSL2-bash routed). Each script:
+The `_validated_claude_code_range` may differ if Windows lags Mac on a Claude Code release.
 
-- Carries a header block (purpose, threat addressed, foundation citation, verification test, execution context).
-- Is PSScriptAnalyzer-clean for PowerShell. SAST-clean for Python. Shellcheck-clean for any WSL2-routed bash.
-- Returns the correct Zod-validated output schema per Claude_Architecture.md §5.3 and §6.
-- Sets `permissionDecision` to `deny` or `ask` when blocking. Never to `allow` to bypass subsequent checks.
-- Returns within a reasonable timeout. WSL2 routing latency is a known cost; Phase 3 measures and confirms within budget.
-
-Mac wrote 6 Python hooks uniformly (per `phase-outputs/PHASE-3-NOTES.md`), choosing Python over shell because every hook parses JSON on stdin. If Windows follows the same Python uniformity, the verification narrows to Python runtime parity (interpreter path, `json` stdlib, native vs WSL2 placement per Phase 2). If Windows elects PowerShell or WSL2-bash, the per-hook port verifies:
-
-- PowerShell version compatibility (5.1 vs 7+) if PowerShell is the chosen language.
-- Path canonicalization. Forward slash vs backslash applied consistently per Phase 2's decision.
-- Line endings. Bash scripts under WSL2 require LF. PowerShell tolerates both.
-- Execution policy. `RemoteSigned` minimum. Hook scripts run under this policy without bypass flags.
-- WSL2 routing latency (if applicable). Startup cost measured; if exceeding PreToolUse budget, the routing decision gets revisited.
-- Process invocation semantics. PowerShell `Start-Process` vs direct invocation. Exit codes captured via `$LASTEXITCODE` when needed.
-
-Mandatory hooks (drawn from `foundation/01-threat-model.md`):
-
-- **PreToolUse subcommand cap**: rejects Bash chains over 50 subcommands. Adversa.ai 2026 bypass class.
-- **PreToolUse external write gate**: requires explicit confirmation for writes outside the working directory. Principle 3 reversibility.
-- **SessionStart pre-trust audit**: refuses to load a project whose `.claude/settings.json` or `.mcp.json` was modified after the last recorded audit. CVE-2025-59536 class.
-- **PreToolUse MCP server allowlist enforcement**: rejects MCP tool calls whose server is not on the allowlist.
-
-Optional hooks Phase 2 may have elected: same as Mac and Jetson (PreCompact preserver, UserPromptSubmit injection scanner, PostToolUse output classifier).
-
-### Deny rules
-
-For each blanket-deny pattern Phase 2 elected, write a file in `windows/harness/rules/`. Each rule file holds the pattern, the threat or QC property addressed, the citation, and the test.
-
-Mac wrote 6 deny rules (per `phase-outputs/PHASE-3-NOTES.md`): bash-deny-git-push-force, bash-deny-dangerously-skip-permissions, bash-deny-sudo, bash-deny-rm-rf-root, filesystem-deny-write-secrets, mcp-deny-server-prefix-default. Pattern-syntax caveat from Mac Phase 5 audit (F02): empty-prefix patterns like `Bash(:*--dangerously-skip-permissions*)` do not enforce in Claude Code v2.1.138; Mac simplified to `Bash(claude --dangerously-skip-permissions:*)`. Per-rule port verifies:
-
-- Windows path conventions in the pattern match the Phase 2 canonicalization decision. Forward slash where accepted, backslash where required, consistent within a rule.
-- `bash-deny-rm-rf-root` Mac patterns target `~/`, `$HOME`, `/Users/`. Windows equivalents target `%USERPROFILE%`, `C:\Users\`, and the WSL2-distribution roots if WSL2 is in play. `bash-deny-sudo` has no Windows equivalent (UAC elevation differs structurally); the deny rule may swap to a `runas` or `Start-Process -Verb RunAs` pattern.
-- Rules using regex match the regex engine the rule will be evaluated against (PowerShell's .NET regex differs from POSIX ERE on edges).
-
-Examples ported from Mac and Jetson patterns:
-
-- `powershell-deny-recursive-delete-outside-cwd.md`: same intent as `bash-deny-rm-outside-cwd.md`, adapted to PowerShell semantics.
-- `bash-deny-curl-without-allowlist.md`: same pattern (curl works on PowerShell as a `Invoke-WebRequest` alias unless removed; rule constrains the underlying behavior).
-- `filesystem-deny-write-secrets-dir.md`: same pattern, Windows path verification.
-- `mcp-deny-server-prefix-default.md`: same pattern, no platform delta.
-
-### settings.json fill
-
-Update `windows/harness/settings.json` (not the template) with the populated values. Same structure as Mac and Jetson but with Windows-specific paths, the Windows Claude Code version pin from Phase 0, and the subsystem field reflecting Phase 2's WSL2 decision.
-
-The MCP server allowlist stays empty. Phase 4 populates.
-
-### Deep-evaluate security-tool seeds
-
-Phase 1 surveyed and pre-filtered. Phase 3 deep-evaluates survivors that touch the deterministic layer, with Windows-specific validation per `windows/evaluations/deep-eval.md` format.
-
-### Anti-overengineering block
-
-Hooks and rules address Phase 2 elected threats. Do not add hooks for threats Phase 2 did not elect. Record new threats surfaced in Phase 3 in `PHASE-3-NOTES.md` for Phase 2 to revisit.
-
-Do not create new abstractions or helper libraries.
-
-Do not write test scaffolding beyond what the rule and hook headers prescribe.
-
-Do not edit `windows/harness/CLAUDE.md`. Phase 5.
+"Needs validation when ported" markers in this prompt are real. Verify on actual Windows + WSL2 hardware.
+</context>
 
 <investigate_before_answering>
-Before writing a hook that returns a specific Zod schema field, read `research/Claude_Architecture.md` §5.3 and §6.
+Read:
 
-Before claiming a deny rule pattern matches a specific behavior, write the rule and exercise it against a test input on Windows.
-
-Before recording that a security tool integrates cleanly on Windows, run the tool against known-vulnerable and known-clean fixtures.
-
-Marker resolution: for each ported pattern, run the equivalent on Windows and confirm behavior matches. Mac Phase 3 validated all 15 hook+rule test cases first run (per `phase-outputs/PHASE-3-NOTES.md`); Windows baselines its own equivalent set. The validation outcome lands in the hook or rule header.
+- `phase-outputs/PHASE_0_GOALS.md`, `ANSWERS.md`
+- `windows/ARCHITECTURE.md`
+- `mac/harness/*` (the reference)
+- `mac/prompts/phase-3-deterministic-layer.md`
+- `foundation/00-quality-contract.md`, `01-threat-model.md`, `02-architectural-principles.md`
 </investigate_before_answering>
 
-## Deliverables
+<validation_markers>
+For `harness/CLAUDE.md`: validate that the version pin matches the Windows Claude Code installation.
 
-- Hook scripts in `windows/harness/hooks/`, one per Phase-2-elected threat, each with Windows port validation outcome in header.
-- Deny rule files in `windows/harness/rules/`, one per blanket-deny pattern.
-- Populated `windows/harness/settings.json` with all Phase 3 fields filled; MCP allowlist deferred to Phase 4.
-- Updated `windows/evaluations/deep-eval.md` with security-tool integration outcomes (including Windows-specific validation).
-- `phase-outputs/PHASE-3-NOTES.md` with rationale.
-- `phase-outputs/PHASE-3-CONTEXT.md`.
+For `harness/settings.json.template`: validate that `wsl.exe -e bash` invocations work from a clean Claude Code session on Windows. Run a synthetic Write event and confirm the hook fires and returns output.
 
-## Verification
+For `harness/rules/paths.deny`: validate that the Windows-specific paths exist on the host. Test that the deny patterns trigger when Claude Code tries to read them.
 
-Before reporting complete:
+For `harness/hooks/post-tool-use-semgrep.sh`: byte-identical to Mac. Validate by running it inside WSL2 against a synthetic SQL injection file. Verify the WSL2 round-trip from Claude Code on Windows works and the model sees the findings.
 
-- PowerShell hooks pass `Invoke-ScriptAnalyzer`.
-- Python hooks pass SAST.
-- WSL2-bash hooks pass `shellcheck`.
-- `windows/harness/settings.json` parses as strict JSON.
-- Each hook's header verification command returns expected.
-- The drift check returns 0 from a bash environment.
-- Line counts reported.
+For `harness/hooks/session-start.sh`: validate the appended WSL2 health-check section detects a stopped WSL2 distribution correctly.
 
-Report hook count, deny rule count, line counts, validation outcomes.
+For path translation: validate that paths in hook payloads (which Claude Code on Windows may send as `C:\...`) are correctly translated to WSL2 paths (`/mnt/c/...`) inside the script.
 
-## Anti-overengineering reminder
+Document each validation in `phase-outputs/PHASE_3_VALIDATION.md`.
+</validation_markers>
 
-The trap is starting to feel productive by writing more hooks than Phase 2 elected. Resist. Every additional hook is additional surface. Hooks enforce what must hold every time.
+<instructions>
+Produce artifacts 1-7, run verification in item 8, commit in item 9.
 
-When in doubt about hook vs deny rule, prefer deny rule. Simpler to audit, faster to evaluate. Hooks reserved for cases deny rules cannot express.
+### 1. `windows/harness/CLAUDE.md`
+
+TRACT pattern. Same as Mac with Windows-specific status section notes (WSL2 dependency, version pin, working-directory convention `/mnt/c/...`). Under 200 lines.
+
+### 2. `windows/harness/settings.json.template`
+
+JSON template. Mirror Mac structure with Windows differences:
+
+Hook command paths wrap in `wsl.exe -e bash <wsl-path>`.
+
+`permissions.deny` extends with Windows credential paths and registry-related dangerous patterns.
+
+`_validated_claude_code_range` reflects Windows validation.
+
+Add a `_comment_wsl_dependency` field documenting that WSL2 is required and what distribution is validated.
+
+### 3. `windows/harness/rules/` directory
+
+Same files as Mac. `paths.deny` adds Windows-specific entries. `commands.deny` adds Windows-specific patterns. `paths.allow` notes the WSL2-vs-Windows path duality. `secrets.patterns` is identical.
+
+### 4. `windows/harness/hooks/post-tool-use-semgrep.sh`
+
+Byte-identical to Mac. Add a path-translation helper at the top of the script that detects Windows-style paths (`C:\...`, `c:/...`) in the payload and converts them to WSL2 paths (`/mnt/c/...`). This makes the script callable equally from Mac/Jetson (where translation is a no-op) and Windows (where it actively converts).
+
+Validation: run inside WSL2 against a Windows-style payload. Verify the path translation works and Semgrep flags the synthetic injection.
+
+### 5. `windows/harness/hooks/pre-tool-use-shell-audit.sh`
+
+Same as Mac with the same path-translation helper.
+
+### 6. `windows/harness/hooks/session-start.sh`
+
+Same as Mac with an appended WSL2 health-check section. The section verifies the WSL2 distribution is running, Semgrep is reachable, and `/mnt/c/` is mounted. Fails advisory (warns) if any check fails; does not block the session.
+
+### 7. `windows/harness/hooks/pre-compact-preserve.sh`
+
+Same as Mac.
+
+### 8. Verification and validation
+
+```bash
+wsl.exe -e bash -c "shellcheck /mnt/c/path/to/repo/windows/harness/hooks/*.sh"
+./scripts/drift-check.sh
+```
+
+Both must pass.
+
+Run the Semgrep hook validation described in `validation_markers`. Document outcomes in `phase-outputs/PHASE_3_VALIDATION.md`.
+
+If validation fails, Phase 3 is incomplete on Windows. Fix and re-run.
+
+### 9. Commit
+
+AP.5 template. Why field cites QC properties, threat IDs, Mac reference commits, and the WSL2 decision in `windows/ARCHITECTURE.md`.
+
+Update `windows/README.md` status table: Phase 3 moves to "Validated" if validation passes.
+</instructions>
+
+<deliverable>
+Artifacts 1-7, validation document, commit. Short summary report.
+</deliverable>
+
+<verification>
+The Semgrep hook must flag a synthetic SQL injection through the WSL2 round-trip exactly as it does on Mac directly.
+
+All hook scripts pass `shellcheck` inside WSL2.
+
+Drift check passes.
+
+Path translation works for both Windows-style and WSL2-style paths in payloads.
+</verification>

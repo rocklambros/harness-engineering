@@ -1,135 +1,110 @@
-# Phase 5 — Wire and Document (Jetson) [SCAFFOLDED]
+# Phase 5: Wire and Document (Jetson) — SCAFFOLDED, NEEDS HARDWARE VALIDATION
 
-**This prompt is scaffolded, not validated.** The structure mirrors `mac/prompts/phase-5-wire-and-document.md`. Jetson-specific details resolve when Rock executes the Jetson build.
+Integrates Phase 3 and Phase 4 on Jetson, runs end-to-end tests adjusted for the Tegra environment, and finalizes Jetson-specific documentation.
+
+The "needs validation when ported" markers cover the integration test (which runs Jetson-specific tool invocations), the documentation (which references Jetson-specific install commands), and the SBOM (which captures Jetson-specific dependency hashes).
+
+---
 
 <role>
-You are wiring the Jetson harness together and producing the polished documentation. Every prior phase produced raw outputs and rationale. Phase 5 reconciles against the Quality Contract and threat model, audits each artifact for scope discipline and correctness, and produces the final form of `jetson/ARCHITECTURE.md`, `jetson/harness/CLAUDE.md`, and `jetson/README.md`.
+You are a senior harness engineer wiring together the Jetson harness layers and producing the final documentation for the Jetson section.
 
-Phase 5 uses the Writer/Reviewer subagent pattern. The main session writes. The Reviewer subagent audits each draft against foundation documents and threat model. Findings get addressed before phase completion.
+Use the writer/reviewer subagent pattern from `jetson/harness/agents/writer-reviewer.md`. One agent writes, one reviews against the Quality Contract and the parity requirement.
 </role>
 
 <effort>xhigh</effort>
-
-<mode>default mode for writing. Reviewer subagent runs in plan mode for its audit pass.</mode>
-
+<mode>default</mode>
 <thinking>adaptive</thinking>
+<context_budget>Run /context at start. Plan for compaction.</context_budget>
+<parallel_tool_calls>Parallel reads of foundation, Mac reference, and prior Jetson phase outputs.</parallel_tool_calls>
+<scope>Strict. Only artifacts named below.</scope>
 
-<context_budget>Run /context at start and end. Phase 5 reads every prior phase output, foundation, threat model, architecture. Reviewer subagent runs in its own context. Record in `phase-outputs/PHASE-5-CONTEXT.md`.</context_budget>
+<context>
+Phases 3 and 4 produced the Jetson harness files. Phase 5:
 
-<parallel_tool_calls>
-Read inputs in parallel: all of `phase-outputs/`, populated `jetson/harness/settings.json`, every file in `jetson/harness/hooks/`, `jetson/harness/rules/`, every `SKILL.md` in `jetson/harness/skills/`, every file in `jetson/harness/agents/`, `jetson/ARCHITECTURE.md`, `jetson/harness/CLAUDE.md`, `jetson/README.md`, foundation documents, `jetson/evaluations/deep-eval.md`. Mac equivalents if Mac has built, for delta reference.
-</parallel_tool_calls>
+Runs an end-to-end integration test adapted for the Jetson environment.
 
-<scope>
-Apply only to:
-- `jetson/ARCHITECTURE.md` (writes: polished final form. Every `<TBD>` and `<NEEDS-JETSON-PORT-VALIDATION>` block resolved or explicitly deferred with reason.)
-- `jetson/harness/CLAUDE.md` (writes: polished operational form. Line count under 160, hard cap 200.)
-- `jetson/README.md` (writes: polished section overview. Status changes from scaffolded to validated.)
-- `jetson/evaluations/pre-filter.md` (writes: final state, every candidate row resolved)
-- `jetson/evaluations/deep-eval.md` (writes: final state, every survivor evaluated)
-- `phase-outputs/PHASE-5-AUDIT.md` (writes: Reviewer findings and dispositions)
-- `phase-outputs/PHASE-5-CONTEXT.md` (writes)
+Finalizes Jetson-specific documentation: `jetson/README.md` updates, `jetson/USER_GUIDE.md` (Jetson-specific quickstart and operational notes), `jetson/HARNESS_GUIDE.md` (Jetson-specific technical reference).
 
-May modify (only if Reviewer surfaces a finding requiring it):
+Updates `JOURNEY.md` with the Jetson build narrative entry.
 
-- Files in `jetson/harness/hooks/`, `jetson/harness/rules/`, `jetson/harness/skills/`, `jetson/harness/agents/`, or `jetson/harness/settings.json`. Each modification records the finding ID and rationale.
+Produces a Jetson-specific SBOM at `jetson/harness/sbom.cdx.json`.
+</context>
 
-Do not modify `foundation/`, `research/`, or `jetson/prompts/`. Do not modify `CHECKPOINT.md` or `CONVERSATION_HISTORY.md`.
-</scope>
+<validation_markers>
+Integration test: the test sequence is identical to Mac in shape but runs on Jetson tooling. Verify that Semgrep on aarch64 catches the same synthetic SQL injection as on Mac. Verify the pre-commit hook chain executes cleanly on Jetson.
 
-## What to do
+Documentation: the `jetson/USER_GUIDE.md` install commands must be runnable on a fresh JetPack install. Verify each command actually works on a representative Jetson AGX Orin.
 
-Three stages: synthesis, audit, resolution.
+SBOM: verify syft runs on aarch64 against the Jetson Python environment. If syft is unavailable for aarch64, document an alternative (e.g., `pip freeze` plus manual hash collection).
 
-### Stage 1: Synthesis
+Document validations in `phase-outputs/PHASE_5_VALIDATION.md`.
+</validation_markers>
 
-Polished `jetson/ARCHITECTURE.md`: every `<TBD-PHASE-0>` resolves to Phase 0 value or recorded deferred-with-reason marker. Every `<NEEDS-JETSON-PORT-VALIDATION>` resolves to the validated outcome or a recorded gap that the next QC.5 trigger addresses. Every Phase 2 decision lands in the relevant component section. Every Phase 3 hook and rule lands in the Permission layer. Every Phase 4 skill, agent, MCP server lands in the appropriate section. Version pins table fully populated.
+<instructions>
+### 1. `jetson/scripts/integration-test.sh`
 
-Polished `jetson/harness/CLAUDE.md`: under 160 lines, hard cap 200. Auto-memory line filled with Phase 2's decision. Operational notes reflect the harness as it actually exists.
+Adapted from `mac/scripts/integration-test.sh` (created during Mac Phase 5). Jetson-specific differences:
 
-Polished `jetson/README.md`: section status changes from scaffolded to validated. Build date recorded. Any remaining gaps from `<NEEDS-JETSON-PORT-VALIDATION>` markers that did not resolve are listed in a "Known gaps" section with the next-revision trigger.
+Synthetic project directory path uses `/tmp/jetson-harness-test/`.
 
-Polished evaluation worksheets: every candidate row resolved, every survivor with deep-eval paragraph including ARM64 Linux validation outcome.
+Tool install verification covers Jetson-specific paths.
 
-### Stage 2: Audit
+Hook trigger sequence is identical to Mac.
 
-Spawn the Reviewer subagent. The Reviewer reads the polished documents, every file in `jetson/harness/`, populated `jetson/harness/settings.json`, foundation documents, relevant sections of `research/Claude_Architecture.md`.
+### 2. `jetson/USER_GUIDE.md`
 
-The Reviewer finds:
+Jetson-specific quickstart and daily-use guide. Sections mirror the root `USER_GUIDE.md` with Jetson tool install commands and operational notes.
 
-- **Scope drift**: artifacts produced outside what the phase prompt named without recorded rationale.
-- **QC violations**: missing pinned versions, missing rationale comments, cache-prefix pollution, lines that put enforcement in CLAUDE.md instead of in a hook.
-- **Threat model gaps**: threats the harness was supposed to address but does not.
-- **Principle violations**: hooks-enforce-CLAUDE.md-advises misalignments, least-privilege violations, reversibility mismatches.
-- **Schema or syntactic errors**: hook scripts with malformed schemas, settings.json keys that do not match Claude Code v2.1.x, deny patterns that do not parse.
-- **Jetson-specific finding class**: unresolved `<NEEDS-JETSON-PORT-VALIDATION>` markers without a deferred-with-reason explanation, ARM64 Linux assertions that lack actual evidence on Jetson hardware, BSD-vs-GNU coreutils misalignment in shipped scripts.
+### 3. `jetson/HARNESS_GUIDE.md`
 
-Each finding lands in `phase-outputs/PHASE-5-AUDIT.md`:
+Jetson-specific technical reference. Covers the five layers with Jetson tool substitutions, the three-layer security stack on Jetson, and the Jetson-specific re-evaluation triggers for QC.5.
 
+### 4. Update `jetson/README.md`
+
+Build status table: all phases move to "Validated" if validation succeeds.
+
+Link to `jetson/USER_GUIDE.md` and `jetson/HARNESS_GUIDE.md` from the routing section.
+
+### 5. Update `JOURNEY.md`
+
+Add a Jetson Phase 5 entry summarizing what was built, what was validated, and what limitations remain.
+
+### 6. SBOM
+
+Generate at `jetson/harness/sbom.cdx.json`. CycloneDX format. Document the generator and version.
+
+### 7. Verification
+
+```bash
+pre-commit run --all-files
+./scripts/drift-check.sh
+jetson/scripts/integration-test.sh
 ```
-### F<NN>: <one-line summary>
-Severity: blocker | major | minor
-Artifact: <path>
-Evidence: <quote or specific line>
-Citation: <foundation or research source>
-Disposition: <fix now | accept residual risk with rationale | defer to revision>
-```
 
-### Stage 3: Resolution
+All must pass.
 
-For each **fix now** finding, the main session edits the artifact and records the change in the audit log. The cycle continues until no blocker findings remain.
+Document in `phase-outputs/PHASE_5_VALIDATION.md`.
 
-**Accept residual risk** findings require rationale in both the audit log and the relevant artifact's header or commit message.
+### 8. Commit and release tag
 
-**Defer to revision** findings require a tracking entry in `REVISIONS.md` if it exists, or in the audit log as the temporary record.
+AP.5 commit. Tag `jetson-v1.0.0` annotating the validated Jetson release.
 
-Phase is complete when:
+Use the writer/reviewer pattern for the documentation writes. Three iterations maximum per artifact.
+</instructions>
 
-- No blocker findings remain unaddressed.
-- Major findings fixed or have an accepted-risk rationale.
-- Minor findings fixed, deferred with tracking, or recorded as accepted.
+<deliverable>
+Integration test script, USER_GUIDE.md, HARNESS_GUIDE.md, README updates, JOURNEY entry, SBOM, validation document, commit, tag. Short summary report.
+</deliverable>
 
-<investigate_before_answering>
-Before claiming a hook script returns a correct Zod schema, the Reviewer reads `research/Claude_Architecture.md` §5.3 and §6.
+<verification>
+Integration test passes end-to-end on Jetson hardware.
 
-Before claiming a deny pattern matches a specific behavior, the Reviewer constructs a test input and verifies. Pattern matching is empirical.
+All pre-commit hooks pass.
 
-Before recording a finding's disposition, the Reviewer cites the foundation or research source.
+Drift check passes.
 
-Before declaring a `<NEEDS-JETSON-PORT-VALIDATION>` marker resolved, the Reviewer confirms actual evidence from Jetson hardware exists in `phase-outputs/`. Inferred validation from Mac is a major finding, not a resolution.
-</investigate_before_answering>
+Writer/reviewer iterations on documentation: 3 or fewer per artifact.
 
-## Deliverables
-
-- Polished `jetson/ARCHITECTURE.md`.
-- Polished `jetson/harness/CLAUDE.md`.
-- Polished `jetson/README.md`.
-- Final `jetson/evaluations/pre-filter.md` and `jetson/evaluations/deep-eval.md`.
-- `phase-outputs/PHASE-5-AUDIT.md`.
-- `phase-outputs/PHASE-5-CONTEXT.md`.
-- Any Phase 3 or Phase 4 artifact modified in response to a finding.
-
-## Verification
-
-Before reporting complete:
-
-- `grep -c '<TBD' jetson/ARCHITECTURE.md jetson/harness/CLAUDE.md jetson/README.md` returns 0 across all three.
-- `grep -c '<NEEDS-JETSON-PORT-VALIDATION>' jetson/ARCHITECTURE.md jetson/harness/CLAUDE.md jetson/README.md` returns 0 across all three, or every remaining marker has a "Known gaps" entry in `jetson/README.md` with the next-revision trigger.
-- `wc -l jetson/harness/CLAUDE.md` returns at most 200.
-- `bash scripts/drift-check.sh` returns 0.
-- `python3 -c "import json; json.load(open('jetson/harness/settings.json'))"` parses.
-- `grep -c 'Severity: blocker' phase-outputs/PHASE-5-AUDIT.md` returns 0 for unaddressed blockers.
-- For every hook script: shellcheck-clean.
-- For every skill with an executable body: SAST-clean.
-
-Report line counts, audit finding count by severity, deferred-to-revision items, remaining validation markers.
-
-## Anti-overengineering
-
-Phase 5 polishes. It does not redesign. Structural issues surfaced in the audit go to `REVISIONS.md` as known gaps. The Jetson build does not get rewritten in Phase 5; the build either passes audit or surfaces redesign work as a known gap.
-
-The Reviewer subagent is not permission to add work. The audit's purpose is to verify what was built, not to expand it. Findings that propose new capability are rejected as out of scope unless they address a threat or QC property already on the board.
-
-The polished documentation does not add information not produced in prior phases. Phase 5 reconciles, reorganizes, removes redundancy. It does not invent.
-
-When the build completes and the audit clears, the Jetson section graduates from scaffolded to validated. The first commit log entry records the build sequence as complete and the harness as operational on Jetson.
+If any verification fails, do not declare Phase 5 validated. Document and propose resolution.
+</verification>

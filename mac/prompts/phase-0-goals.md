@@ -1,87 +1,65 @@
-# Phase 0 — Goals and Architecture
+# Phase 0: Goals and Scope
+
+This phase establishes what we're building, what success looks like, and what's out of scope. It runs before any discovery or architecture work because everything downstream depends on a shared understanding of the target.
+
+Phase 0 is short. It produces one document. It does not write any code or configuration.
+
+---
 
 <role>
-You are setting the goals for the Mac harness build and filling the platform-specific blocks in `mac/ARCHITECTURE.md`. Phase 0 records the version pins, the model and effort defaults, the sandbox posture, the persistence configuration, and the next-evaluation triggers. You make calibrated decisions and document the rationale. You do not write hooks, deny rules, skills, or agents here. Those are Phase 3 and Phase 4 deliverables.
+You are a senior harness engineer working with Rock Lambros on a public reference repository documenting how a production-grade Claude Code harness is built. Phase 0 is the goal-setting phase. Your job is to produce a concrete, verifiable statement of what the Mac harness must do and what success looks like.
 
-Phase 0 is the moment to record what the environment actually is, in writing, so every subsequent phase has a stable reference. The `<TBD-PHASE-0>` blocks in `mac/ARCHITECTURE.md` are the explicit set of decisions Phase 0 owns.
+Read the foundation documents before producing the goal statement. Match the writing rules in `CLAUDE.md`.
 </role>
 
-<effort>xhigh</effort>
-
-<mode>plan mode at start to read and reason. Switch to default mode only to write the updated `mac/ARCHITECTURE.md`. No other files change in Phase 0.</mode>
-
+<effort>high</effort>
+<mode>default</mode>
 <thinking>adaptive</thinking>
+<context_budget>Run /context at start. Document the delta in the phase output.</context_budget>
+<parallel_tool_calls>Prefer parallel reads for independent foundation files.</parallel_tool_calls>
+<scope>Strict. Produce only the Phase 0 deliverable. Do not begin any Phase 1 work.</scope>
 
-<context_budget>Run /context at start and end. Phase 0 reads several foundation documents and the architecture reference; expect a meaningful cache prefill. Record the start and end context state in `phase-outputs/PHASE-0-CONTEXT.md`.</context_budget>
+<context>
+The repo holds the build sequence for a Mac harness. Before discovery (Phase 1) or architecture interview (Phase 2), we need a shared baseline of what the harness is supposed to accomplish.
 
-<parallel_tool_calls>
-Read the foundation documents in parallel: `foundation/00-quality-contract.md`, `foundation/01-threat-model.md`, `foundation/02-architectural-principles.md`, `foundation/03-seed-evaluation-methodology.md`, `foundation/04-research-references.md`. Read `mac/README.md`, `mac/ARCHITECTURE.md`, `mac/harness/CLAUDE.md`, and `mac/harness/settings.json.template` in parallel. These reads are independent.
-</parallel_tool_calls>
-
-<scope>
-Apply only to:
-- `mac/ARCHITECTURE.md` (writes: fills `<TBD-PHASE-0>` blocks)
-- `phase-outputs/PHASE-0-CONTEXT.md` (writes: the context-budget record)
-- `phase-outputs/PHASE-0-DECISIONS.md` (writes: the rationale log)
-
-Do not modify any file in `foundation/`, `research/`, `mac/prompts/`, `mac/harness/` (except as scoped), `mac/evaluations/`, or `mac/scripts/`. Do not create hooks, skills, agents, or deny rules. Do not pre-write Phase 1 inventory content.
-</scope>
-
-## What to do
-
-Read the foundation documents and `mac/ARCHITECTURE.md`. For each `<TBD-PHASE-0>` block in `mac/ARCHITECTURE.md`, decide the value or leave it explicitly deferred to a later phase with a recorded reason. The decisions are calibrated, not arbitrary.
-
-The blocks that Phase 0 fills include:
-
-- **macOS version pin**: the exact version this build targets. Read from `sw_vers`.
-- **Node and Python versions**: the versions installed; the harness pins to these unless Phase 2 elects to bump.
-- **Claude Code version pin**: the minor-version range. If installed Claude Code is `v2.1.88`, the pin is `v2.1.*`. Larger or smaller ranges require a rationale block.
-- **Working directory**: confirm `/Users/klambros/harness-engineering/`.
-- **Daily-driver harness path**: in-repo (`mac/harness/`) vs symlinked into `~/.claude/`. The choice has cache implications because the cached prefix's stability depends on the file location being stable across sessions.
-- **Default model and subagent default**: Opus vs Sonnet. The decision has cost and cache-economy consequences (QC.4a, same-family parent/subagent share cache; cross-family does not).
-- **Effort levels**: `xhigh` and `high` are the working pair; record if any deviation.
-- **Permission mode default**: `default` per Principle 2 (least privilege) unless a rationale block justifies a different starting point.
-- **Auto-mode classifier**: enable or disable. Hughes 2026 reports 0.4% false-positive rate. Disable here is a deliberate choice that the rationale block justifies.
-- **Bash sandboxing**: enable on Mac. Record any exclusion patterns. If sandboxing is not yet supported in the installed Claude Code version, record that fact and the deferred-decision rationale.
-- **Persistence**: session log location and retention. Read from Claude Code's settings or documentation; if unclear, run a short session and observe.
-- **Network egress monitoring**: record whether Little Snitch, LuLu, or equivalent is installed. Not required by the harness, but informs Phase 4's MCP server decisions.
-
-For each block filled, the decision lands in `mac/ARCHITECTURE.md`. The rationale lands in `phase-outputs/PHASE-0-DECISIONS.md`, one short paragraph per decision, citing the foundation document or research source that informs the choice.
-
-For each block deferred, record the reason in `mac/ARCHITECTURE.md` (e.g., "deferred to Phase 2 interview" with a brief reason) and in `phase-outputs/PHASE-0-DECISIONS.md`.
+The foundation documents in `foundation/` establish the Quality Contract, threat model, and architectural principles. Phase 0 instantiates those for the specific Mac harness build.
+</context>
 
 <investigate_before_answering>
-Before recording a version pin, run the version command and capture the actual output. Do not assume from memory.
+Before producing the goal statement, read these files in full:
 
-Before recording the Claude Code session log path or sandbox behavior, consult the installed Claude Code's documentation or run a short session to observe. Do not assume.
+- `foundation/00-quality-contract.md`
+- `foundation/01-threat-model.md`
+- `foundation/02-architectural-principles.md`
+- `mac/ARCHITECTURE.md`
 
-Before claiming Bash sandboxing is enabled or has specific exclusion patterns, verify against the running Claude Code's settings or behavior.
+Do not paraphrase from memory. If you reference a Quality Contract property or a threat ID, verify it exists in the foundation docs before citing it.
 </investigate_before_answering>
 
-## Deliverables
+<instructions>
+Produce a single document at `phase-outputs/PHASE_0_GOALS.md`. Create the `phase-outputs/` directory if it doesn't exist (gitignored, build-internal).
 
-Three updates and writes:
+The document has four sections:
 
-1. `mac/ARCHITECTURE.md`: every `<TBD-PHASE-0>` block is either filled with a value or replaced with an explicit deferred-with-reason marker. The next-evaluation triggers in the §Version pins table are populated.
-2. `phase-outputs/PHASE-0-CONTEXT.md`: the `/context` output at the start and end of this session, with the delta.
-3. `phase-outputs/PHASE-0-DECISIONS.md`: one short paragraph per filled block, naming the decision and citing the source.
+**Section 1: Goal statement.** One paragraph (3-5 sentences) describing what the Mac harness must do when complete. Concrete. Verifiable. Not aspirational. Example shape: "The Mac harness enables a Claude Code session to write code against the developer's local filesystem with X, Y, Z properties enforced deterministically and A, B, C provided as guidance."
 
-## Verification
+**Section 2: Success criteria.** A numbered list of 5-10 specific tests that, when passing, mean the harness is done. Each test must be either runnable as a command or observable in a single session. Example: "Running `./mac/scripts/drift-check.sh` returns exit code 0 against the repo at HEAD." Not example: "The harness is secure." That second one is not testable.
 
-Before reporting complete, run:
+**Section 3: Out of scope.** A short list of capabilities or concerns that are explicitly not part of the Mac build. This is the place to name what we're declining to do. Multi-user support, custom model fine-tuning, web service deployment, and similar. Be specific about what's out and why.
 
-- `grep -c '<TBD-PHASE-0>' mac/ARCHITECTURE.md` to confirm no unaddressed blocks remain.
-- `bash scripts/drift-check.sh` to confirm the cached prefix is still clean.
-- `wc -l mac/ARCHITECTURE.md phase-outputs/PHASE-0-DECISIONS.md` to confirm the files have substantive content.
+**Section 4: Phase boundaries.** A short paragraph for each of Phase 1 through Phase 5 stating what that phase will produce and what success looks like for that phase. These are not new commitments; they reflect what's already in `ARCHITECTURE.md`.
 
-If any `<TBD-PHASE-0>` block remains in `mac/ARCHITECTURE.md` without an explicit deferred-with-reason marker, the phase is not complete.
+Match the writing rules in `CLAUDE.md`. No em dashes. No semicolons. No corporate slop. Plain words.
+</instructions>
 
-Report the line counts of the three artifacts and the drift-check exit code. Do not summarize the architecture document's contents in chat.
+<deliverable>
+`phase-outputs/PHASE_0_GOALS.md` with the four sections above.
 
-## Anti-overengineering
+Report at the end: a 2-3 sentence summary of what the goal statement commits to, plus any open questions that should be carried into Phase 1.
+</deliverable>
 
-Phase 0 records decisions. It does not implement them. Hooks, deny rules, skills, agents, and MCP server registrations are Phase 3 and Phase 4 deliverables. If a Phase 0 decision implies a hook or skill, record the implication in `phase-outputs/PHASE-0-DECISIONS.md` for Phase 3 or Phase 4 to act on. Do not write the hook or skill here.
+<verification>
+After producing the deliverable, run `wc -l phase-outputs/PHASE_0_GOALS.md` and report. The document should be 80-200 lines. Shorter means thin. Longer means scope creep.
 
-The Quality Contract operationalization section of `mac/ARCHITECTURE.md` references tools (Brewfile.lock, syft, detect-secrets, semgrep) that are not yet wired. Phase 0 does not wire them. Phase 3 evaluates them and decides. The architecture document records the *intent*; Phase 3 records the implementation.
-
-When in doubt about scope, defer to Phase 2 or Phase 3 with a recorded reason rather than acting.
+Run `./scripts/drift-check.sh` and confirm it passes.
+</verification>

@@ -1,138 +1,167 @@
-# Phase 5 — Wire and Document
+# Phase 5: Wire and Document
+
+This phase integrates Phase 3 and Phase 4 artifacts, runs end-to-end tests, finalizes documentation, and prepares the harness for public release. The writer/reviewer subagent pattern from Phase 4 drives the documentation work.
+
+Phase 5 is where the repo transitions from "build in progress" to "public reference repo." Every document must read for a non-author audience.
+
+---
 
 <role>
-You are wiring the Mac harness together and producing the polished documentation. Every prior phase produced raw outputs and rationale notes. Phase 5 reconciles those outputs against the Quality Contract and the threat model, audits each artifact for scope discipline and correctness, and produces the final form of `mac/ARCHITECTURE.md`, `mac/harness/CLAUDE.md`, and `mac/README.md`.
+You are a senior harness engineer wiring together the deterministic and extension layers of a Claude Code harness and producing the final documentation for public release.
 
-Phase 5 uses the Writer/Reviewer subagent pattern. The main session writes; the Reviewer subagent audits each draft against the foundation documents and the threat model. Findings get addressed before the phase completes. The Reviewer is defined in `mac/harness/agents/reviewer.md` from Phase 4.
+Use the writer/reviewer subagent pattern defined in `mac/harness/agents/writer-reviewer.md`. One agent writes; the other reviews against the Quality Contract and SSDF practices. Iterate until the reviewer signs off.
 </role>
 
 <effort>xhigh</effort>
-
-<mode>default mode for writing. The Reviewer subagent runs in plan mode for its audit pass.</mode>
-
+<mode>default</mode>
 <thinking>adaptive</thinking>
+<context_budget>Run /context at start. Phase 5 reads and reviews extensively; budget for at least one compaction. Document delta.</context_budget>
+<parallel_tool_calls>Use parallel reads for foundation, prior-phase outputs, and existing harness files.</parallel_tool_calls>
+<scope>Strict. Produce only the artifacts in deliverables. Do not redo Phase 3 or Phase 4 work unless explicit bugs surface during integration testing.</scope>
 
-<context_budget>Run /context at start and end. Phase 5 reads every prior phase output, the foundation, the threat model, and the architecture document. The reads are substantial. Reviewer subagent runs in its own context, so the main session does not pay the audit's read cost directly. Record start, end, and delta in `phase-outputs/PHASE-5-CONTEXT.md`.</context_budget>
+<use_writer_reviewer_pattern>
+For each documentation artifact in this phase:
 
-<parallel_tool_calls>
-Read inputs in parallel at the start: all of `phase-outputs/`, the populated `mac/harness/settings.json`, every file in `mac/harness/hooks/`, every file in `mac/harness/rules/`, every `SKILL.md` in `mac/harness/skills/`, every file in `mac/harness/agents/`, `mac/ARCHITECTURE.md`, `mac/harness/CLAUDE.md`, `mac/README.md`, the foundation documents, and `mac/evaluations/deep-eval.md`. These are independent.
-</parallel_tool_calls>
+1. Spawn the writer subagent with the artifact specification.
+2. Writer produces a draft.
+3. Spawn the reviewer subagent against the draft, with the Quality Contract and the SSDF practice list as the review criteria.
+4. Reviewer produces a critique with specific line references.
+5. Writer revises against the critique.
+6. Loop until the reviewer signs off or three iterations have happened (whichever comes first).
+7. Main session takes the final draft and writes the file.
 
-<scope>
-Apply only to:
-- `mac/ARCHITECTURE.md` (writes: the polished final form; every `<TBD>` block resolved or explicitly deferred with a recorded reason)
-- `mac/harness/CLAUDE.md` (writes: the polished operational form; line count under 160, hard cap 200)
-- `mac/README.md` (writes: the polished section overview)
-- `mac/evaluations/pre-filter.md` (writes: final state, every candidate row resolved)
-- `mac/evaluations/deep-eval.md` (writes: final state, every survivor evaluated)
-- `phase-outputs/PHASE-5-AUDIT.md` (writes: the Reviewer's findings and dispositions)
-- `phase-outputs/PHASE-5-CONTEXT.md` (writes)
+Document the iteration count for each artifact in `phase-outputs/PHASE_5_VERIFICATION.md`.
+</use_writer_reviewer_pattern>
 
-May modify, only if the Reviewer surfaces a finding the audit requires:
+<context>
+Phases 3 and 4 produced the harness files. Phase 5:
 
-- Files in `mac/harness/hooks/`, `mac/harness/rules/`, `mac/harness/skills/`, `mac/harness/agents/`, or `mac/harness/settings.json`. Each modification records the finding ID from `PHASE-5-AUDIT.md` and the change rationale.
+Runs end-to-end integration tests that exercise the full three-layer security stack.
 
-Do not modify `foundation/`, `research/`, or `mac/prompts/`. Do not modify `CHECKPOINT.md` or `CONVERSATION_HISTORY.md`.
-</scope>
+Finalizes the user-facing documentation: README files at each level, the user guide, and the architecture guide.
 
-## What to do
+Updates the JOURNEY.md with the build narrative.
 
-Phase 5 is in three stages: synthesis, audit, then resolution.
+Produces release artifacts: SBOM, signed commit instructions, the release commit.
 
-### Stage 1: Synthesis
-
-Produce the final form of `mac/ARCHITECTURE.md`. Every `<TBD-PHASE-0>` block resolves to the Phase 0 value or to a recorded deferred-with-reason marker. Every Phase 2 decision lands in the relevant component section. Every Phase 3 hook and rule lands in the Permission layer section. Every Phase 4 skill, agent, and MCP server lands in the appropriate section. The version pins table is fully populated.
-
-Produce the final form of `mac/harness/CLAUDE.md`. Line count stays under 160, hard cap 200. The auto-memory line is filled with Phase 2's decision. The operational notes reflect the harness as it actually exists, not as it was scaffolded in Batch 2.
-
-Produce the final form of `mac/README.md`. The section overview reflects the validated build. The status section records the first build sequence date and any post-build revisions.
-
-Produce the final form of the evaluation worksheets. Every candidate row is resolved. Every survivor has a deep-eval paragraph. Rejected candidates have their rationale on the record.
-
-### Stage 2: Audit
-
-Spawn the Reviewer subagent defined in `mac/harness/agents/reviewer.md`. The Reviewer reads:
-
-- The polished `mac/ARCHITECTURE.md`, `mac/harness/CLAUDE.md`, and `mac/README.md`.
-- Every file in `mac/harness/hooks/`, `mac/harness/rules/`, `mac/harness/skills/`, and `mac/harness/agents/`.
-- The populated `mac/harness/settings.json`.
-- The foundation documents (Quality Contract, threat model, architectural principles, seed evaluation methodology).
-- The relevant sections of `research/Claude_Architecture.md` (§5, §6, §8).
-
-The Reviewer's job is to find:
-
-- **Scope drift**: code or documentation produced outside what the phase prompt named, without a recorded rationale.
-- **QC violations**: missing pinned versions, missing rationale comments, cache-prefix pollution, lines that put enforcement in CLAUDE.md instead of in a hook.
-- **Threat model gaps**: threats in `foundation/01-threat-model.md` that the harness was supposed to address but does not, or addresses only advisorily.
-- **Principle violations**: hooks-enforce-CLAUDE.md-advises misalignments, least-privilege violations, reversibility mismatches.
-- **Schema or syntactic errors**: hook scripts that return malformed schemas, settings.json keys that do not match Claude Code v2.1.x, deny patterns that do not parse.
-
-Each finding lands in `phase-outputs/PHASE-5-AUDIT.md` as:
-
-```
-### F<NN>: <one-line finding summary>
-Severity: blocker | major | minor
-Artifact: <path>
-Evidence: <quote or specific line>
-Citation: <foundation or research source>
-Disposition: <fix now | accept residual risk with rationale | defer to revision>
-```
-
-The Reviewer returns the audit list. The main session does not edit the audit list; it acts on it.
-
-### Stage 3: Resolution
-
-For each finding marked **fix now**, the main session edits the relevant artifact and records the change in the audit log. The cycle continues until no blocker findings remain.
-
-Findings marked **accept residual risk** require a rationale recorded both in the audit log and in the relevant artifact's header or commit message.
-
-Findings marked **defer to revision** require a tracking entry in `REVISIONS.md` if that file exists, or in the audit log as the temporary record.
-
-The phase is complete when:
-
-- No blocker findings remain unaddressed.
-- Major findings are either fixed or have an accepted-risk rationale.
-- Minor findings are either fixed, deferred with a tracked entry, or recorded as accepted in the audit log.
+Documents any known issues, deferred work, or open questions in a structured way that a public reader can follow.
+</context>
 
 <investigate_before_answering>
-Before claiming a hook script returns a correct Zod schema, the Reviewer reads `research/Claude_Architecture.md` §5.3 and §6 and confirms the field names and types. The architecture document is authoritative.
+Read these files in full:
 
-Before claiming a deny pattern matches a specific behavior, the Reviewer constructs a test input and verifies the match. Pattern matching is empirical, not theoretical.
-
-Before recording a finding's disposition, the Reviewer cites the foundation or research source that turned the decision. A disposition without a citation is a guess, not a finding.
+- All Phase 3 and Phase 4 deliverables in `mac/harness/`
+- `phase-outputs/PHASE_3_VERIFICATION.md`, `phase-outputs/PHASE_4_VERIFICATION.md`
+- `mac/ARCHITECTURE.md` (updated through Phase 2)
+- `mac/README.md` (the section README)
+- The root `README.md`, `CLAUDE.md`, `JOURNEY.md`
+- All `foundation/` files (re-read; their citations are about to land in the final docs)
 </investigate_before_answering>
 
-## Deliverables
+<instructions>
+### 1. End-to-end integration test
 
-- Polished `mac/ARCHITECTURE.md`.
-- Polished `mac/harness/CLAUDE.md`.
-- Polished `mac/README.md`.
-- Final `mac/evaluations/pre-filter.md` and `mac/evaluations/deep-eval.md`.
-- `phase-outputs/PHASE-5-AUDIT.md` with every finding and its disposition.
-- `phase-outputs/PHASE-5-CONTEXT.md`.
-- Any Phase 3 or Phase 4 artifact modified in response to an audit finding, with the modification's rationale recorded.
+Create `mac/scripts/integration-test.sh` that:
 
-## Verification
+Starts a clean Claude Code session against a synthetic project directory.
 
-Before reporting complete:
+Triggers the security-review skill by writing a Python file with a known SQL injection pattern.
 
-- `grep -c '<TBD' mac/ARCHITECTURE.md mac/harness/CLAUDE.md mac/README.md` returns 0 across all three.
-- `wc -l mac/harness/CLAUDE.md` returns at most 200.
-- `bash scripts/drift-check.sh` returns 0.
-- `python3 -c "import json; json.load(open('mac/harness/settings.json'))"` parses cleanly.
-- `grep -c 'Severity: blocker' phase-outputs/PHASE-5-AUDIT.md` returns 0 for unaddressed blockers (each one has a "Disposition: fix now" with the corresponding artifact change, or the disposition is explicitly accepted).
-- For every hook script: shellcheck-clean.
-- For every skill with an executable body: SAST-clean.
-- The number of `<TBD>` markers across all `mac/` artifacts is 0.
+Verifies the PostToolUse Semgrep hook fires and surfaces the finding.
 
-Report the line counts for the three polished documents, the audit finding count broken down by severity, and any deferred-to-revision items.
+Triggers Claude to fix the file in the same session.
 
-## Anti-overengineering
+Verifies the second hook invocation shows no findings.
 
-Phase 5 polishes; it does not redesign. If the audit surfaces a structural issue that requires a redesign, the issue is a blocker finding with the disposition "defer to revision" and a tracked entry in `REVISIONS.md`. The Mac build does not get rewritten in Phase 5; the build either passes the audit or surfaces the redesign work as a known gap.
+Runs the pre-commit hook against the changed files and verifies all checks pass.
 
-The Reviewer subagent is not a permission to add work. The audit's purpose is to verify what was built, not to expand it. Findings that propose new capability ("we should also add X") are rejected as out of scope unless they address a threat or QC property already on the board.
+Cleans up the synthetic project.
 
-The polished documentation does not add information not produced in prior phases. Phase 5 reconciles, reorganizes, and removes redundancy. It does not invent.
+Write a `phase-outputs/PHASE_5_INTEGRATION_TEST.md` documenting the test sequence, expected outputs, and actual outputs. Test must pass before moving to documentation.
 
-When the build is complete and the audit clears, the Mac section is born public. Subsequent revisions land in their own commits per the project commit template. The first commit log entry for `mac/` records the build sequence as complete and the harness as operational.
+### 2. User guide
+
+Create `mac/USER_GUIDE.md` with these sections:
+
+Quickstart: how to adopt the harness in a new Claude Code project, in 5-10 concrete steps.
+
+Daily use: what to expect during a session, including how the security-review skill loads, how the commit-time hook works, and how to interpret findings.
+
+Troubleshooting: common issues and how to diagnose them. Include the cache-TTL silent regression, the hook-failure-closed behavior, and the drift-check failure modes.
+
+Customization: how to extend the harness with project-specific rules, skills, and agents without breaking the Quality Contract.
+
+Target 400-800 lines. Written for a developer who is not Rock, not the author. First-person voice but addressed to "you."
+
+### 3. Harness guide
+
+Create `mac/HARNESS_GUIDE.md` with these sections:
+
+The five layers, with one paragraph each pointing to the relevant files.
+
+The three-layer security stack, with one paragraph each explaining when each layer fires and what it catches.
+
+The relationship between the harness and Claude Code (what's our config vs. what's upstream).
+
+How to update the harness when Claude Code releases a new minor version (the QC.5 re-evaluation checklist).
+
+Target 300-600 lines. More technical than USER_GUIDE.md, less narrative than ARCHITECTURE.md.
+
+### 4. README updates
+
+Update `mac/README.md` to reflect the completed state. Phase status table moves from "Pending" to "Validated" for all phases. Add links to the new USER_GUIDE.md and HARNESS_GUIDE.md.
+
+Update the root `README.md` to reflect the completed state. Update the "What ships in the harness" section if anything changed. Add a link to the mac/USER_GUIDE.md for quickstart.
+
+### 5. JOURNEY update
+
+Add a Phase 5 entry to `JOURNEY.md` summarizing what was built, what was decided, and what remains open as known limitations.
+
+### 6. SBOM and release artifacts
+
+Run `scripts/generate-sbom.sh` (create this script if it doesn't exist; it should run syft against the harness directory and produce a CycloneDX SBOM at `mac/harness/sbom.cdx.json`).
+
+Document the signed-commit process in `SECURITY.md` if not already documented.
+
+### 7. Final verification
+
+Run the full pre-commit suite:
+
+```bash
+pre-commit run --all-files
+./scripts/drift-check.sh
+mac/scripts/integration-test.sh
+```
+
+All must pass. Document the results in `phase-outputs/PHASE_5_VERIFICATION.md`.
+
+### 8. Commit and tag
+
+Produce the release commit message following AP.5. The commit lands all Phase 5 artifacts plus any documentation updates as one logical change.
+
+Produce the v1.0.0 tag annotation with the release notes summarizing the three-layer security stack, the cross-platform parity statement (with Jetson and Windows in scaffolded state), and the known limitations.
+</instructions>
+
+<deliverable>
+Integration test script and results document.
+
+User guide, harness guide, README updates, JOURNEY entry, SBOM, verification document.
+
+Release commit message and v1.0.0 tag annotation.
+
+A short report summarizing: total artifact count for Phase 5, integration test result, drift check pass/fail, and any known limitations carried into the public release.
+</deliverable>
+
+<verification>
+Integration test must pass end to end. The Semgrep hook must demonstrate the SecureForge Appendix C feedback loop with a real synthetic vulnerability.
+
+All four pre-commit hook categories must run cleanly: trailing whitespace and EOF, gitleaks, semgrep, shellcheck.
+
+The drift check must pass.
+
+USER_GUIDE.md and HARNESS_GUIDE.md must pass the reviewer subagent's Quality Contract review with three or fewer iterations. If more iterations are needed, the docs likely have a structural issue that should be addressed before declaring Phase 5 complete.
+
+Total CLAUDE.md hierarchy (root plus `mac/harness/CLAUDE.md`) must remain under 400 lines per QC.4b.
+
+Document each verification result in `phase-outputs/PHASE_5_VERIFICATION.md`.
+</verification>

@@ -1,83 +1,71 @@
-# Phase 0 — Goals and Architecture (Jetson)
+# Phase 0: Goals and Scope (Jetson)
+
+Establishes what we're building on Jetson, what success looks like, and what's out of scope. Same structure as the Mac Phase 0 prompt with Jetson-specific framing.
+
+---
 
 <role>
-You are setting the goals for the Jetson harness build and filling the platform-specific blocks in `jetson/ARCHITECTURE.md`. Phase 0 records the version pins, the model and effort defaults, the sandbox posture, the persistence configuration, and the next-evaluation triggers. You make calibrated decisions and document the rationale. You do not write hooks, deny rules, skills, or agents here. Those are Phase 3 and Phase 4 deliverables.
+You are a senior harness engineer working on the Jetson AGX Orin variant of a Claude Code harness. Phase 0 establishes goals for the Jetson build. Your job is to produce a concrete, verifiable statement of what the Jetson harness must do.
 
-The Jetson document carries two kinds of unresolved blocks: `<TBD-PHASE-0>` (Phase 0 owns) and `<NEEDS-JETSON-PORT-VALIDATION>` (Phase 0 verifies any that the live environment can confirm; the rest stay for Phase 3 implementation).
+The capability surface must match Mac per AP.3. Where the implementation differs (tool choice, install path), the differences are documented in Phase 2 and `ARCHITECTURE.md`. Phase 0 is about what the harness must achieve, not about how.
 </role>
 
-<effort>xhigh</effort>
-
-<mode>plan mode at start. Switch to default mode only to write the updated `jetson/ARCHITECTURE.md`. No other files change in Phase 0.</mode>
-
+<effort>high</effort>
+<mode>default</mode>
 <thinking>adaptive</thinking>
+<context_budget>Run /context at start. Document delta in the phase output.</context_budget>
+<parallel_tool_calls>Use parallel reads for foundation and Mac reference files.</parallel_tool_calls>
+<scope>Strict. Produce only the Phase 0 deliverable. Do not begin Phase 1.</scope>
 
-<context_budget>Run /context at start and end. Phase 0 reads several foundation documents and the architecture reference. Record state in `phase-outputs/PHASE-0-CONTEXT.md`.</context_budget>
+<context>
+The Jetson harness must achieve cross-platform parity with the validated Mac build. The Mac Phase 0 goals are in `mac/phase-outputs/PHASE_0_GOALS.md` if available, or the Mac `prompts/phase-0-goals.md` provides the template.
 
-<parallel_tool_calls>
-Read foundation documents in parallel: `foundation/00-quality-contract.md`, `foundation/01-threat-model.md`, `foundation/02-architectural-principles.md`, `foundation/03-seed-evaluation-methodology.md`, `foundation/04-research-references.md`. Read `jetson/README.md`, `jetson/ARCHITECTURE.md`, `jetson/harness/CLAUDE.md`, and `jetson/harness/settings.json.template` in parallel.
-</parallel_tool_calls>
-
-<scope>
-Apply only to:
-- `jetson/ARCHITECTURE.md` (writes: fills `<TBD-PHASE-0>` blocks; resolves `<NEEDS-JETSON-PORT-VALIDATION>` blocks the live environment can confirm)
-- `phase-outputs/PHASE-0-CONTEXT.md` (writes: the context-budget record)
-- `phase-outputs/PHASE-0-DECISIONS.md` (writes: the rationale log)
-
-Do not modify any file in `foundation/`, `research/`, `jetson/prompts/`, `jetson/harness/` (except as scoped), `jetson/evaluations/`, or `jetson/scripts/`. Do not create hooks, skills, agents, or deny rules. Do not pre-write Phase 1 inventory content.
-</scope>
-
-## What to do
-
-Read the foundation documents and `jetson/ARCHITECTURE.md`. For each `<TBD-PHASE-0>` block, decide the value or leave it explicitly deferred with a recorded reason. For each `<NEEDS-JETSON-PORT-VALIDATION>` block, verify against the live Jetson environment and either confirm (replacing the marker with the confirmed fact) or document the gap (replacing the marker with a more specific deferred note for Phase 3).
-
-The blocks Phase 0 fills include the standard set (macOS version pin replaced with Ubuntu/JetPack version pin, Node and Python versions, Claude Code version pin, working directory, daily-driver harness path, default model and subagent default, permission mode default, persistence configuration). Add to these:
-
-- **Ubuntu version pin and JetPack version**: read from `/etc/os-release` and `/etc/nv_tegra_release` or equivalent.
-- **GPU and CUDA state**: record what's installed and what the harness sees. The harness does not require CUDA, but the inventory of what's available informs Phase 4.
-- **Shell default**: `echo $SHELL`. Bash is typical on Ubuntu, but record what's actually configured.
-- **Network egress monitoring**: record whether `opensnitch` or equivalent is installed.
-- **Disk encryption status**: `lsblk -o NAME,TYPE,FSTYPE` to confirm LUKS is in the stack. Record.
-- **Bash sandboxing**: `<NEEDS-JETSON-PORT-VALIDATION>` block. Verify what Claude Code's installed version supports on ARM64 Linux. If sandboxing is not yet implemented for this platform-architecture pair at the installed version, record the gap and the fallback posture (deny-rules + hooks carry the full enforcement burden until sandboxing arrives).
-- **Claude Code session log path on Linux**: `<NEEDS-JETSON-PORT-VALIDATION>` block. Run a short session and observe where the log lands. Record.
-
-For each block filled, the decision lands in `jetson/ARCHITECTURE.md`. The rationale lands in `phase-outputs/PHASE-0-DECISIONS.md`, one short paragraph per decision, citing the foundation document or research source that informs the choice.
-
-For each block that cannot be resolved on Jetson without Phase 3 implementation work, record the reason explicitly and tag it for Phase 3.
+This Phase 0 establishes the same capability target on Jetson, plus any Jetson-specific success criteria that arise from the platform's nature (Tegra-specific paths, JetPack version constraints, ARM64 tool availability).
+</context>
 
 <investigate_before_answering>
-Before recording a version pin, run the version command. Do not assume.
+Read these files in full before producing the goal statement:
 
-Before recording Claude Code's session log path or sandbox behavior on ARM64 Linux, consult the documentation and run a short session to observe. Do not assume parity with Mac.
+- `foundation/00-quality-contract.md`
+- `foundation/01-threat-model.md`
+- `foundation/02-architectural-principles.md` (especially AP.3 cross-platform parity)
+- `jetson/ARCHITECTURE.md`
+- `mac/ARCHITECTURE.md` (the validated reference)
+- `mac/prompts/phase-0-goals.md` (template structure)
 
-Before claiming Bash sandboxing is enabled or has specific behavior on ARM64 Linux, verify against the running Claude Code's actual behavior. Inference from Mac is not evidence.
-
-Before claiming a tool is the ARM64 build, verify with `file $(which <tool>)` or version output that names the architecture.
+If `mac/phase-outputs/PHASE_0_GOALS.md` exists, read it as the validated reference. The Jetson goals mirror it.
 </investigate_before_answering>
 
-## Deliverables
+<instructions>
+Produce `phase-outputs/PHASE_0_GOALS.md` with these sections:
 
-Three updates and writes:
+**Section 1: Goal statement.** One paragraph describing what the Jetson harness must do. Concrete, verifiable, capability-aligned with Mac.
 
-1. `jetson/ARCHITECTURE.md`: every `<TBD-PHASE-0>` block filled or explicitly deferred with reason. Every `<NEEDS-JETSON-PORT-VALIDATION>` block the live environment can confirm is resolved. Remaining validation markers stay tagged for Phase 3 with a more specific note about what evidence resolves them.
-2. `phase-outputs/PHASE-0-CONTEXT.md`: the `/context` output at start and end, with delta.
-3. `phase-outputs/PHASE-0-DECISIONS.md`: one short paragraph per filled block, naming the decision and citing the source.
+**Section 2: Success criteria.** Numbered list of 5-10 specific runnable tests. Each test must be executable as a command on the Jetson. Examples:
 
-## Verification
+`./scripts/drift-check.sh` returns exit code 0.
 
-Before reporting complete:
+`mac/harness/hooks/post-tool-use-semgrep.sh` (after the Jetson port renames to `jetson/harness/hooks/post-tool-use-semgrep.sh`) runs cleanly against a synthetic SQL injection test file.
 
-- `grep -c '<TBD-PHASE-0>' jetson/ARCHITECTURE.md` confirms no unaddressed Phase 0 blocks remain.
-- `grep -c '<NEEDS-JETSON-PORT-VALIDATION>' jetson/ARCHITECTURE.md` reports how many validation markers remain. The number is informational, not a failure indicator. Each remaining marker carries a more specific note than the scaffold version.
-- `bash scripts/drift-check.sh` returns 0.
-- `wc -l jetson/ARCHITECTURE.md phase-outputs/PHASE-0-DECISIONS.md` confirms substantive content.
+Semgrep installed on Jetson catches the same CWE-89 patterns as on Mac (specific rule set verified).
 
-Report line counts and remaining validation marker count.
+Include Jetson-specific success criteria: JetPack version compatibility verified, Tegra-specific paths covered by `rules/paths.deny`, no Mac-specific assumptions remain in the Jetson harness files.
 
-## Anti-overengineering
+**Section 3: Out of scope.** Same as Mac out-of-scope list plus Jetson-specific exclusions: cross-compilation from Mac, CUDA-specific anti-pattern coverage in `security-review` skill, local-inference Claude Code variants, multi-user setup.
 
-Phase 0 records decisions. It does not implement them. Hooks, deny rules, skills, agents, and MCP server registrations are Phase 3 and Phase 4. If a Phase 0 decision implies a hook or skill, record the implication for Phase 3 or Phase 4 to act on. Do not write the hook or skill here.
+**Section 4: Phase boundaries.** One paragraph for Phase 1 through Phase 5 stating what each produces on Jetson. The Phase 3-5 entries explicitly note "needs validation when ported."
 
-The Quality Contract operationalization section references tools that are not yet wired. Phase 0 does not wire them. Phase 3 evaluates and decides.
+Match the writing rules. No em dashes. No semicolons. No corporate slop.
+</instructions>
 
-When in doubt, defer to Phase 2 or Phase 3 with a recorded reason rather than acting.
+<deliverable>
+`phase-outputs/PHASE_0_GOALS.md` with the four sections.
+
+A 2-3 sentence summary report at the end.
+</deliverable>
+
+<verification>
+Run `wc -l phase-outputs/PHASE_0_GOALS.md` and report. Expected 80-200 lines.
+
+Run `./scripts/drift-check.sh`. It must pass.
+</verification>

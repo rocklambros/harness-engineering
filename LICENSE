@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 Rock Lambros (RockCyber)
+Copyright (c) 2026 Rock Lambros / RockCyber
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,6 +22,22 @@ SOFTWARE.
 
 ---
 
-This license covers the code, configuration, and documentation in this repository.
-The three documents in `research/` are included for reference under whatever
-license applies to each original document and are not licensed under MIT.
+## Third-party content attribution
+
+This repository's `security-review` skill is informed by patterns documented in
+the Arcanum-Sec/sec-context taxonomy:
+https://github.com/Arcanum-Sec/sec-context
+
+That work is licensed CC BY 4.0 and is the work of Jason Haddix and Arcanum
+Information Security. Pattern selection and ranking informed by that taxonomy
+is attributed in the skill's source files.
+
+This repository's commit-time hardening pattern (PostToolUse SAST feedback loop)
+adapts the methodology described in:
+
+  Liu, H., Einstein, L., Yang, J., et al. (2026). SecureForge: Finding and
+  Preventing Vulnerabilities in LLM-Generated Code via Prompt Optimization.
+  arXiv:2605.08382. https://github.com/sisl/SecureForge
+
+SecureForge is MIT-licensed. The implementation in this repo is independent
+and does not include SecureForge source code directly.

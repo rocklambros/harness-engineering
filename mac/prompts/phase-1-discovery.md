@@ -1,85 +1,110 @@
-# Phase 1 — Discovery
+# Phase 1: Discovery
+
+This phase produces a read-only inventory of what's already on the developer's machine that the harness will interact with: existing Claude Code configuration, installed tools, package managers, project conventions, and configurations that conflict with the harness's target state.
+
+Phase 1 writes no production artifacts. It produces three documents in `phase-outputs/` that drive the Phase 2 architecture interview.
+
+---
 
 <role>
-You are discovering what is already on this Mac that the harness needs to know about: existing Claude Code configuration files, installed CLI tools, MCP server configurations in cloned repositories, pre-existing skills or hooks from prior experimentation, and any conflict between what Phase 0 recorded and what's on disk. Phase 1 produces an inventory and a conflicts list. You do not change anything. You read, you record, and you flag.
+You are a senior harness engineer in the discovery phase of a Claude Code harness build. Your job is to inventory the existing state, surface conflicts with the Phase 0 goals, and produce a list of questions that need decisions before Phase 3 begins.
 
-Discovery is read-only. The threat model in `foundation/01-threat-model.md` names the pre-trust initialization class (CVE-2025-59536). Phase 1 is structurally similar: you are looking at code that could otherwise execute at session start. The discipline here is to look at the files, not to load them into Claude Code through any configuration mechanism.
+This is a read-only phase. You will not modify any file outside `phase-outputs/`.
 </role>
 
 <effort>high</effort>
-
-<mode>plan mode for the entire phase. Phase 1 writes only build-internal phase outputs; plan mode keeps the discovery surface honest.</mode>
-
+<mode>plan</mode>
 <thinking>adaptive</thinking>
+<context_budget>Run /context at start. Phase 1 reads broadly and may need a compaction. Document context delta in the phase output.</context_budget>
+<parallel_tool_calls>Heavily preferred. Phase 1 reads many independent files; use parallel reads for inventory.</parallel_tool_calls>
+<scope>Strict. Only `phase-outputs/INVENTORY.md`, `phase-outputs/CONFLICTS.md`, and `phase-outputs/QUESTIONS.md`. Do not write anywhere else.</scope>
 
-<context_budget>Run /context at start and end. Phase 1 reads many files. The inventory subagent absorbs most of the read cost; the main session synthesizes from the subagent's structured output. Record start, end, and delta in `phase-outputs/PHASE-1-CONTEXT.md`.</context_budget>
+<context>
+The Phase 0 goal statement lives at `phase-outputs/PHASE_0_GOALS.md`. Read it first. Discovery happens in light of those goals, not in a vacuum.
 
-<parallel_tool_calls>
-The inventory scan touches more than 20 files across the machine. Spawn a single inventory subagent for the scan rather than reading files serially in the main session. The subagent runs in plan mode with a focused tool allowlist (Read, Bash for `find` and version commands). Synthesis happens in the main session.
+Existing state on the machine includes:
 
-For specific cross-references after the subagent returns (e.g., reading the foundation documents to cross-check the inventory), prefer parallel reads.
-</parallel_tool_calls>
+The user's Claude Code installation and global configuration at `~/.claude/`.
 
-<use_parallel_tool_calls>
-The inventory scan benefits from parallel `find`, `ls`, and `cat` invocations against independent directories. Within the inventory subagent, use parallel tool calls for directory scans that do not depend on each other.
-</use_parallel_tool_calls>
+Existing project CLAUDE.md files in the user's other repos (read-only inspection to understand existing conventions).
 
-<scope>
-Apply only to:
-- `phase-outputs/PHASE-1-CONTEXT.md` (writes: context-budget record)
-- `phase-outputs/INVENTORY.md` (writes: the inventory)
-- `phase-outputs/CONFLICTS.md` (writes: any conflicts with Phase 0)
-- `mac/evaluations/pre-filter.md` (updates: candidate rows where the discovery scan finds a candidate installed)
+Installed security tools: Semgrep, gitleaks, trivy, syft, grype, and others identified in `foundation/04-research-references.md` section R.4.3.
 
-Do not modify any file in `foundation/`, `research/`, `mac/prompts/`, `mac/ARCHITECTURE.md`, `mac/harness/`, or `mac/scripts/`. Do not write hooks, skills, agents, or deny rules. Do not install or remove any tools. Do not edit existing `.claude/` directories anywhere on the machine.
-</scope>
+Installed development tools: language runtimes, package managers, the Homebrew inventory.
 
-## What to do
+Pre-existing MCP server registrations and configurations.
 
-Read `phase-outputs/PHASE-0-DECISIONS.md` and `mac/ARCHITECTURE.md` to understand what Phase 0 recorded. Then spawn the inventory subagent.
-
-The inventory subagent's task is to record, without modifying:
-
-1. **Claude Code configuration on this machine**: any `~/.claude/`, `~/.config/claude/`, or equivalent directories. The `settings.json`, `CLAUDE.md`, hooks, skills, agents, and MCP server configurations that already exist.
-2. **In-repo Claude Code configurations**: every `.claude/` directory in cloned repositories under `~/code/`, `~/projects/`, `~/git/`, or wherever Rock keeps source. The pre-trust initialization audit habit (§4 of `foundation/01-threat-model.md`) starts here.
-3. **Installed CLI tools relevant to the harness**: the tools the Phase 0 pre-flight verified, plus any related tools the harness candidates depend on (jq, yq, curl, gh, etc.).
-4. **MCP server installations**: any MCP servers installed globally (npm global, pipx, Homebrew). Record what's installed but do not invoke any of them.
-5. **Pre-existing skills, hooks, or agents from prior experimentation**: anything Rock built before this repo that the harness should know about (to either incorporate, replace, or explicitly retire).
-6. **Seed candidates from `foundation/03-seed-evaluation-methodology.md`**: which of the listed candidates are already installed on this machine, at what version, and where.
-
-The subagent returns a structured summary. The main session synthesizes the summary into the three deliverables.
+You will read all of these in parallel where possible. Synthesis happens in this session, not in a subagent.
+</context>
 
 <investigate_before_answering>
-Before recording that a tool is installed, the subagent runs the version command and captures actual output. Memory is not evidence.
+Before producing inventory output, actually read the files. Do not infer what's installed from what's typically installed. Use `which`, `brew list`, `ls -la ~/.claude/`, and similar concrete checks.
 
-Before recording that a `.claude/` directory contains specific hooks, skills, or MCP servers, the subagent reads the files. Filenames alone are not evidence.
-
-Before recording a conflict with Phase 0, the subagent quotes the exact line from `mac/ARCHITECTURE.md` and the exact observation that contradicts it. A conflict without a specific contradiction is a concern, not a conflict, and lands in the inventory rather than the conflicts file.
+If a tool's version is referenced in `foundation/04-research-references.md` (e.g., Semgrep, gitleaks), check the installed version against the pinned version in `.pre-commit-config.yaml`. Mismatches go in `CONFLICTS.md`.
 </investigate_before_answering>
 
-## Deliverables
+<use_parallel_tool_calls>
+For Phase 1 inventory, run these reads in parallel:
 
-Three writes and one update:
+The Homebrew installation list (`brew list --formula` and `brew list --cask`).
 
-1. `phase-outputs/INVENTORY.md`: a structured record of everything discovered. Organized by section (Claude Code config, in-repo configs, CLI tools, MCP servers, pre-existing skills/hooks/agents, seed candidate status). Each item has a path, a version where applicable, and a one-line note where context matters.
-2. `phase-outputs/CONFLICTS.md`: any place where the discovery contradicts Phase 0's recorded decisions. Empty file if no conflicts. Each conflict cites the Phase 0 line and the contradicting observation.
-3. `phase-outputs/PHASE-1-CONTEXT.md`: the start/end `/context` output and delta.
-4. `mac/evaluations/pre-filter.md`: update the rows where the discovery scan found a candidate installed. The license, architecture, and maintainership columns get filled where the discovery surfaced enough information. Rows where information is still missing remain `<TBD-PHASE-1>`.
+The Python tool inventory (`pip list --user`, `pipx list`).
 
-## Verification
+The npm global inventory (`npm list -g --depth=0`).
 
-Before reporting complete:
+The Claude Code global config (`ls -la ~/.claude/` and `cat` of any settings files found).
 
-- `wc -l phase-outputs/INVENTORY.md phase-outputs/CONFLICTS.md` to confirm both have appropriate content. INVENTORY.md is typically 100-300 lines depending on what's on the machine. CONFLICTS.md is typically short or empty.
-- `grep -c '<TBD-PHASE-1>' mac/evaluations/pre-filter.md` to see how many candidate rows still need information from later phases. The number is informational, not a failure indicator.
-- `bash scripts/drift-check.sh` to confirm cached-prefix discipline holds.
+The user's existing CLAUDE.md files in other repos (find via `find ~/git ~/projects ~/work -name 'CLAUDE.md' -maxdepth 3 2>/dev/null` or similar).
 
-Report the artifact paths and line counts. Surface the count of conflicts as a flag for Phase 2.
+Pre-existing pre-commit configurations elsewhere on disk that might conflict.
 
-## Anti-overengineering
+Run these reads in parallel where possible. Synthesize after the reads complete.
+</use_parallel_tool_calls>
 
-Phase 1 does not decide. It records. If the inventory surfaces a tool that looks like it would fit a Phase 3 or Phase 4 need, the inventory records the tool's presence and Phase 3 or Phase 4 decides whether to integrate. Do not pre-recommend in Phase 1.
+<instructions>
+Produce three documents in `phase-outputs/`. The directory is build-internal and gitignored.
 
-If a `.claude/` directory in a cloned repo looks suspicious (unfamiliar hooks, undocumented MCP servers, recent file mtime without commit history), record the observation. Do not delete or modify the files. Do not load the repo into Claude Code. The pre-trust audit happens during Phase 3 or as an out-of-band review before Rock opens the repo.
+**`phase-outputs/INVENTORY.md`** — a comprehensive inventory of what's installed and configured on the machine relevant to the harness. Organized into sections:
 
-The seed pre-filter table in `mac/evaluations/pre-filter.md` is updated with discovery findings, not with Phase 3 decisions. The result column stays `<TBD>` until Phase 3 or Phase 4 runs the deep evaluation.
+- Claude Code installation: version, global config location, current settings
+- Security tools installed: tool, version, install method
+- Development tools relevant to the harness: languages, package managers, version
+- MCP servers configured: server, version (if introspectable), config location
+- Pre-existing project CLAUDE.md examples: path and 1-2 sentence summary each
+- Other Claude Code-related conventions noticed during the inventory
+
+Be exhaustive but concise. One line per tool when possible. Group by category.
+
+**`phase-outputs/CONFLICTS.md`** — a list of incompatibilities between the existing state and the Phase 0 goals or the Quality Contract. Each entry has:
+
+- What was found (the existing state)
+- What's expected (per Phase 0 or QC)
+- Severity (blocker, warning, note)
+- Proposed resolution (deferred to Phase 2)
+
+Example entries: existing Semgrep version mismatches the pinned `.pre-commit-config.yaml` version. Existing Claude Code config has telemetry off, which kills the 1h cache TTL silently per QC.4a. A pre-existing MCP server is configured that would consume context budget at session start per QC.4b.
+
+If no conflicts are found, say so explicitly. Empty conflicts file is a valid Phase 1 output.
+
+**`phase-outputs/QUESTIONS.md`** — a numbered list of decisions that need to be made before Phase 3 can begin. Each question is multiple-choice when possible (not open-ended). These drive the Phase 2 interview.
+
+Examples: "Do we adopt the existing global CLAUDE.md or replace it? Options: A, B, C." Not: "How should we handle the global CLAUDE.md?"
+
+Surface 8-15 questions. Fewer means you didn't dig deep enough. More means you're including obvious decisions.
+
+Match the writing rules. No em dashes. No semicolons. No corporate slop.
+</instructions>
+
+<deliverable>
+Three files in `phase-outputs/`. A short report at the end summarizing: the count of items in each inventory category, the number of conflicts by severity, and the number of questions surfaced.
+
+Do not begin Phase 2. The questions go to Phase 2 for resolution.
+</deliverable>
+
+<verification>
+Run `wc -l phase-outputs/INVENTORY.md phase-outputs/CONFLICTS.md phase-outputs/QUESTIONS.md`. Expected line counts: INVENTORY 80-300 lines, CONFLICTS 0-100 lines, QUESTIONS 30-120 lines.
+
+Run `./scripts/drift-check.sh` and confirm it passes.
+
+If any deliverable is missing, list which and stop. Do not synthesize from memory.
+</verification>

@@ -1,77 +1,55 @@
-# 01 — Pre-flight (Jetson)
+# Pre-flight Prompt (Jetson)
+
+This prompt is run once before Phase 0 against the Jetson AGX Orin. It executes the bash to move the three research documents from the repo root into `research/` and normalizes paths.
+
+This is not a build phase. It is a setup task.
+
+---
 
 <role>
-You are preparing the Jetson AGX Orin build environment for the harness-engineering phase sequence. This prompt runs once before Phase 0. Your job is to verify the tools the phases assume, create the build-internal directory structure, and record the baseline state. You do not make architecture decisions here. You verify and record.
+You are a senior harness engineer setting up the working directory for a multi-phase Claude Code build on an NVIDIA Jetson AGX Orin. Your only job in this prompt is to run the pre-flight script and verify the result. Do not start any other work.
 </role>
 
-<effort>high</effort>
-
-<mode>default (this prompt writes a small number of build-internal files)</mode>
-
+<effort>medium</effort>
+<mode>default</mode>
 <thinking>adaptive</thinking>
+<scope>Strict. Apply only to the pre-flight setup. Do not touch any other directory or file.</scope>
 
-<context_budget>Run /context at start. Record the loaded tools, the active CLAUDE.md hierarchy line count, and the cache footprint in phase-outputs/PREFLIGHT.md. Run /context at end and record the delta.</context_budget>
+<context>
+The repo at the project root on the Jetson (typically `/home/jetson/harness-engineering/`) was seeded with three research documents in the root directory. They need to be moved to `research/`. The SAGE document filename contains a space that needs to be normalized.
 
-<parallel_tool_calls>Prefer parallel reads when verifying tool versions or inspecting installed files. Version checks are independent.</parallel_tool_calls>
+The `scripts/pre-flight.sh` script handles this. It is the same script used on Mac because the operation is platform-agnostic.
+</context>
 
-<scope>
-Apply only to artifacts named in the deliverables list below. Do not modify any file outside `phase-outputs/`. Do not write to `jetson/harness/`, `jetson/prompts/`, `jetson/evaluations/`, `jetson/ARCHITECTURE.md`, or anywhere in `foundation/` or `research/`. Pre-flight is read-only with one exception: it creates `phase-outputs/` and writes `phase-outputs/PREFLIGHT.md`.
-</scope>
+<instructions>
+Run the pre-flight script:
 
-## What to do
+```bash
+cd "$HOME/harness-engineering" || cd /home/jetson/harness-engineering
+chmod +x scripts/pre-flight.sh
+./scripts/pre-flight.sh
+```
 
-Verify the tools the phase sequence assumes are installed and reachable on Jetson. Record the versions. Create the build-internal `phase-outputs/` directory. Write `phase-outputs/PREFLIGHT.md` with the baseline.
+After the script completes, verify three things:
 
-Tools to verify on Jetson:
+The `research/` directory contains exactly three files: `Claude_Architecture.md`, `Harness_Engineering_for_Claude_Code_A_Systems_Architecture_Analysis.md`, and `NIST.SP.800-218-Secure-Software-Development-Framework.md`.
 
-1. Claude Code: `claude --version`. Record the exact version string and confirm ARM64 Linux binary availability.
-2. Git: `git --version`. Record.
-3. APT and package status: `dpkg --version` and a sample of harness-relevant packages (`dpkg -l | grep -E 'python3|nodejs|build-essential'`).
-4. Node: `node --version`. Record.
-5. Python: `python3 --version`. Record.
-6. JetPack version: `cat /etc/nv_tegra_release` or equivalent. Record. JetPack-specific stack identification matters for the architecture document.
-7. Pre-commit framework: `pre-commit --version`. Record.
-8. Shellcheck: `shellcheck --version`. Record.
-9. Markdownlint: `markdownlint-cli2 --version`. Record. If not installed, gap.
-10. Detect-secrets: `detect-secrets --version`. Record. If not installed, gap.
-11. Semgrep: `semgrep --version`. Record. Verify the install is the ARM64 Linux build.
+The repo root no longer contains any of the three research documents.
 
-Any tool reporting missing is recorded as a gap. Do not install missing tools. The Phase 2 architecture interview decides what to do about gaps.
+All shell scripts in `scripts/`, `jetson/scripts/`, and `jetson/harness/hooks/` are executable.
 
-Read the four files in `foundation/` and confirm readable and well-formed. Read the three documents in `research/` and confirm readable. Run `bash scripts/drift-check.sh` against the current repo state and confirm exit code 0.
+Report the result in a short prose block. If any verification fails, do not attempt to fix it. Report the failure and stop.
 
-<investigate_before_answering>
-Before claiming a tool is installed at a specific version, run the version command. Do not assume.
+Additionally, verify the JetPack version and CUDA availability for context (these inform Phase 1 inventory):
 
-Before claiming an ARM64 Linux build is what's installed, verify with `file $(which <tool>)` or `<tool> --version` output that names the architecture.
-</investigate_before_answering>
+```bash
+cat /etc/nv_tegra_release 2>/dev/null | head -n 1 || echo "JetPack info unavailable"
+nvcc --version 2>/dev/null | tail -n 1 || echo "CUDA toolkit not on PATH"
+```
 
-## Deliverables
+Report what you find. The information feeds Phase 1.
+</instructions>
 
-One file:
-
-**`phase-outputs/PREFLIGHT.md`**, containing:
-
-- Section "Tools verified", listing each tool, its version (or "not installed"), and the architecture confirmation where ambiguity is possible.
-- Section "Foundation readable", confirming the five `foundation/` files are present and readable.
-- Section "Research readable", confirming the three `research/` files are present and readable.
-- Section "Drift check", recording exit code and output.
-- Section "Context baseline", recording `/context` output at start and end with the delta.
-- Section "Gaps", listing any tools or files missing. Empty if none.
-- Section "Jetson-specific observations", capturing anything about the JetPack base, the GPU state, or the network egress configuration that informs later phases.
-
-## Verification
-
-Before reporting complete:
-
-- `ls phase-outputs/PREFLIGHT.md` confirms the file exists.
-- `wc -l phase-outputs/PREFLIGHT.md` confirms substantive content (40-90 lines).
-- `bash scripts/drift-check.sh` returns 0.
-
-Report the file path, line count, and drift-check exit code. Do not summarize the file's contents in chat.
-
-## Anti-overengineering
-
-Pre-flight is verification, not configuration. Do not install tools. Do not modify hooks. Do not edit any file outside `phase-outputs/`. Do not create test files, helper scripts, or additional documentation. If you find yourself wanting to do any of those things, stop and note the impulse under "Deferred to Phase 2."
-
-Phase 0 runs after this one. Phase 2 architecture interview decides what to do about gaps. Pre-flight only verifies and records.
+<deliverable>
+A short prose report (4-7 sentences) describing the pre-flight result, the JetPack/CUDA context, and verification status.
+</deliverable>

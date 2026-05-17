@@ -1,190 +1,147 @@
-# Mac harness architecture
+# Mac Harness Architecture
 
-The Mac build of the harness. This document is the operational reference for how the nine harness components from `foundation/02-architectural-principles.md` land on macOS Apple Silicon. The harness is built and validated; the SAGE nine-component decomposition (§4) organizes the document, and the Quality Contract from `foundation/00-quality-contract.md` operationalizes per platform.
+This document describes the macOS harness as a system. It explains what each layer does, why each layer exists, and how the layers compose. It is the authoritative reference for the Mac section; all phase prompts and harness files trace back to it.
 
-## Environment baseline
+The Jetson and Windows architectures share the same shape with platform-specific tool substitutions. See `jetson/ARCHITECTURE.md` and `windows/ARCHITECTURE.md` for the differences.
 
-| Property | Value |
-|---|---|
-| Operating system | macOS on Apple Silicon (ARM64) |
-| macOS version pin | 26.3, build 25D125, Darwin kernel 25.3.0 |
-| Hardware | M-series Apple Silicon |
-| Shell | zsh (default on modern macOS) |
-| Package manager | Homebrew 5.1.10 |
-| Node version | v24.10.0 |
-| Python version | 3.13.9 (Anaconda distribution at `/opt/anaconda3/bin/python3`) |
-| Claude Code version pin | v2.1.* (currently 2.1.138). Range per QC.5. |
-| Working directory | `/Users/klambros/harness-engineering/` |
-| Daily-driver harness path | In-repo source of truth at `mac/harness/`. Phase 2 Q3 elected to rebuild `~/.claude/` from scratch as a post-build operational step; the harness reference under `mac/harness/` is the template for that rebuild. |
+## System context
 
-Version pins are recorded after Phase 0 verifies the live environment and drive the §Version pins section below.
+The Mac harness runs Claude Code (pinned to v2.1.x, range to be finalized in Phase 0) against the developer's local filesystem at `/Users/klambros/`. Claude Code is granted permission to read, write, and execute against a set of project directories with hooks and permission checks intercepting specific tool calls.
 
-## The nine harness components on Mac
+The harness mediates between the developer's intent (expressed through Claude Code prompts and the project CLAUDE.md hierarchy) and the actions Claude Code takes (file writes, command executions, network requests, MCP tool calls). The mediation is what makes the system a harness rather than just a chat interface.
 
-### 1. Agent loop
+Hardware: Apple Silicon (M-series), ARM64, macOS 14+ (Sonoma or later). Tooling assumes Homebrew is available, Python 3.12+ is on PATH, and the standard Unix toolchain (bash, sed, grep) is present.
 
-Owned by Claude Code itself. The harness configures it through model selection, effort level, and session mode.
+External dependencies: the Anthropic API for Claude Code's model access, the package managers (Homebrew, pip, npm) for tool installation, the GitHub API for repo interactions when relevant.
 
-- Default model: `claude-opus-4-7` (Opus 4.7, 1M context). The build session runs on Opus and same-family subagents preserve cache lineage per QC.4a. Routine daily-driver work overrides at session start with `--model sonnet` when cost dominates.
-- Effort level: `xhigh` for build phases, `high` for routine work.
-- Session mode default: `auto` permission mode (Phase 2 Q1). The ML classifier (Hughes 2026, 0.4% false-positive rate) handles ambient approvals; Phase 3 deny rules carry the deterministic floor under it.
-- Compaction posture: continuous, no manual resets unless a model-version change makes the heuristic stale.
+## The five layers
 
-### 2. Instruction layer
+The harness is structured into five layers, each scoped to what it can enforce or guide.
 
-Three CLAUDE.md files participate in the cached prefix.
+### Layer 1: Project CLAUDE.md
 
-- `/Users/klambros/harness-engineering/CLAUDE.md` (build-time, governs work on this repo)
-- `mac/harness/CLAUDE.md` (operational, governs daily Claude Code sessions; 81 lines after Phase 5 polish)
-- `~/.claude/CLAUDE.md` participates automatically in every session via Claude Code's hierarchy walk. Phase 1 inventory measured ~17 lines plus a SuperClaude framework @import chain totaling ~800-900 lines. Phase 2 Q3 elected to rebuild the user-level config lean (no transitive @import chain or a deliberate small one with explicit budget); the rebuild is a post-Phase-5 operational step.
+The `harness/CLAUDE.md` file is the project-level operational context for every Claude Code session against this repo. It applies the TRACT pattern (Role, code standards, security rules, core constraints, things-that-break, operational, status).
 
-Project-hierarchy line total stays under 400 per QC.4b. The drift check in `scripts/drift-check.sh` enforces the cap. Phase 2 Q10's widening of the check to include the user-level `~/.claude/CLAUDE.md` plus its transitive `@import` chain landed 2026-05-11 (commit `920d5e7`). The widened check currently reports FAIL because the legacy SuperClaude framework chain totals 973 lines; the Q3 `~/.claude/` rebuild trims the chain and clears the gate.
+Scope: advisory. The model reads it, weights its instructions, and may not perfectly follow them. Rules that must not be broken belong in the deterministic layers below.
 
-### 3. Tool pool
+Size budget: under 200 lines hard cap, target 160. The total CLAUDE.md hierarchy (root plus subdirectory CLAUDE.md files in scope) stays under 400 lines per QC.4b.
 
-Default enabled built-ins on Claude Code v2.1.138, observed via `/context`:
+Cache discipline per QC.4a applies: no timestamps, no run IDs, no session state. Changing data goes in `<system-reminder>` blocks injected per session, not in the cached prefix.
 
-- Always loaded (9): `Agent`, `AskUserQuestion`, `Bash`, `Edit`, `Read`, `ScheduleWakeup`, `Skill`, `ToolSearch`, `Write`.
-- Deferred and loaded on demand via `ToolSearch` (22): `CronCreate`, `CronDelete`, `CronList`, `EnterPlanMode`, `EnterWorktree`, `ExitPlanMode`, `ExitWorktree`, `LSP`, `ListMcpResourcesTool`, `Monitor`, `NotebookEdit`, `PushNotification`, `ReadMcpResourceTool`, `RemoteTrigger`, `TaskCreate`, `TaskGet`, `TaskList`, `TaskOutput`, `TaskStop`, `TaskUpdate`, `WebFetch`, `WebSearch`.
+Rationale: AP.1 establishes deterministic-over-advisory as the architectural principle. CLAUDE.md is the advisory surface. It exists to influence model behavior at the margin, not to enforce policy.
 
-Per Claude_Architecture.md §6.2, `getAllBaseTools()` returns up to 54 tools; the default subset is the starting position and the harness narrows from there via deny rules and MCP allowlist.
+### Layer 2: settings.json
 
-### 4. Permission layer
+The `harness/settings.json.template` configures the deterministic behavior of Claude Code: permission mode defaults, hook registrations, MCP server configurations, and the trust-boundary policy.
 
-The deny-first, ask-by-default permission system from Claude_Architecture.md §5 lands here. Phase 2 elected the auto-mode classifier (Q1); Phase 3 wrote the deterministic floor under it.
+Scope: deterministic. Settings are enforced by Claude Code itself, not by the model.
 
-- **Permission mode default**: `auto`. The classifier handles ambient cases; the deny rules below catch the rest.
-- **Deny rules (5, in `mac/harness/rules/`)**:
-  - `bash-deny-dangerously-skip-permissions.md` — model-proposed bypass-mode invocations. Principle 1 (hooks enforce) and Q9 (narrowed 2026-05-11: operator-initiated bypass at session start is permitted; `skipDangerousModePermissionPrompt: true` in `~/.claude/settings.json` is the documented expected state for that case).
-  - `bash-deny-sudo.md` — root execution. Principle 2 (least privilege).
-  - `bash-deny-rm-rf-root.md` — `rm -rf /`, `~/`, `$HOME`, `/Users/`. Principle 3 (reversibility).
-  - `filesystem-deny-write-secrets.md` — Write/Edit to `.env`, `secrets/`, `credentials.json`. Asset #2 (secrets).
-  - `mcp-deny-server-prefix-default.md` — no pattern; documents the structural mechanism (empty `mcpServers` + Phase 4 entries = no unlisted server reaches the pool). Threat actors #6.
-- **Hooks (7, in `mac/harness/hooks/`, all Python)**:
-  - `PreToolUse-bash-cap-subcommands.py` — denies Bash chains over 30 subcommands. Phase 2 Q6, defense in depth below the Adversa.ai 2026 documented 50 threshold.
-  - `PreToolUse-external-write-gate.py` — asks confirmation on Write/Edit/MultiEdit/NotebookEdit outside cwd. Principle 3.
-  - `PreToolUse-supply-chain-bash-checks.py` — asks on `npx -y`, `uvx --from git+` without ref, `@latest`, unpinned `pip install`, `curl|sh`. Phase 2 Q2a T2.
-  - `PreToolUse-cached-prefix-write-gate.py` — asks on writes to CLAUDE.md hierarchy, `foundation/`, user-level @import targets. Phase 2 Q2a T5 (implemented as PreToolUse rather than PostToolUse because the intent is gating).
-  - `PreToolUse-git-push-force-ask.py` — asks confirmation on `git push --force`, `-f`, `--force-with-lease`. Post-launch revision 2026-05-12 (converted from the original `bash-deny-git-push-force.md` deny rule to hook-mediated ask per operator's daily-driver workflow needing admin-bypass force-pushes to public repos with branch protection). Principle 3 (reversibility) and Asset #1 (source code integrity).
-  - `SessionStart-audit-claude-config.py` — blocks session if in-repo `.claude/settings.json` / `.claude/settings.local.json` / `.mcp.json` has sha256 absent from `~/.claude/audited-hashes.json`. Phase 2 Q2b T3 + Q5 every-clone cadence.
-  - `Stop-prune-session-logs.py` — deletes `~/.claude/projects/*.jsonl` older than 90 days with 24h marker guard. Phase 2 Q11.
-- **MCP server-prefix denies**: managed structurally via `mcpServers` allowlist rather than a blanket deny pattern (deny-first ordering would override Phase 4 allows). See `mac/harness/rules/mcp-deny-server-prefix-default.md` for the design.
+Key configurations:
 
-Hooks enforce. CLAUDE.md advises. Every rule that must hold every time lives in a hook script, not in an advisory instruction. This is the load-bearing decision from `foundation/02-architectural-principles.md` Principle 1.
+Permission mode defaults to plan for Phase 1 and Phase 2 prompts (read-heavy discovery), default for Phase 3 through Phase 5 (write phases).
 
-### 5. Context pipeline
+PostToolUse hook registered on Write and Edit tools, invoking `harness/hooks/post-tool-use-semgrep.sh`.
 
-- Compaction: automatic (Claude Code's built-in five-layer compaction per Claude_Architecture.md §7).
-- System reminders: used for dynamic content that would otherwise pollute the cached prefix, per QC.4b.
-- File references: discovered in Phase 1, recorded in `phase-outputs/INVENTORY.md`.
-- Context resets: not used by default.
-- PreCompact / PostCompact hooks: not registered. Phase 3 deep-evaluation found no failure mode that justified compaction-lifecycle gating; the default position holds.
-- Cached-prefix write protection: `PreToolUse-cached-prefix-write-gate.py` gates Write/Edit against CLAUDE.md hierarchy, `foundation/`, and user-level @import targets. Cache poisoning (Threat actors #5) requires deliberate confirmation, not accidental edit.
+PreCompact hook registered to preserve the relevant phase context across compaction events.
 
-### 6. Sandbox
+PermissionRequest hook registered to log and gate elevated-permission requests.
 
-Independent of the permission layer. Operates on filesystem and network isolation axes per Claude_Architecture.md §5.4.
+MCP server list is not present in this file by default; servers are added per-session via tool search.
 
-- **Bash sandboxing**: disabled. Claude Code v2.1.138 CLI exposes no direct sandbox flag (verified by `claude --help`). The permission system (deny rules + interactive approval + auto-mode classifier) is the primary enforcement layer per Principle 1. macOS `sandbox-exec` is available as an OS primitive but the runtime's documented use of it is not visible from the CLI. Re-evaluate on Claude Code minor bump per QC.5.
-- **Filesystem isolation**: covered by `PreToolUse-external-write-gate.py` rather than sandbox-level enforcement. Writes outside cwd ask for confirmation.
-- **Network egress restrictions**: covered by MCP allowlist (extension layer) and per-server review (Phase 4). No OS-level egress monitor installed; Phase 2 Q7 elected to skip OS-level monitor installation. The permission layer + MCP allowlist carry the load.
-- **Exclusion patterns**: not applicable while the sandbox stays disabled.
+Rationale: AP.1 and Liu et al. R.1.1 on hook events and the 50-subcommand bypass class. Coverage of the bypass class requires explicit hook registration on the canonical and alternate event names.
 
-### 7. MCP integration
+### Layer 3: Deterministic rules
 
-Each MCP server is a permission grant. Allowlisting and pre-trust audit are the discipline.
+The `harness/rules/` directory holds the deterministic policy that the hooks enforce. This is not a single tool; it's a collection of pattern files, regex sets, and policy documents that the hook scripts consult.
 
-- **MCP allowlist**: managed via `enabledPlugins` (plugin-shipped servers) and `mcpServers` (direct registrations) in `mac/harness/settings.json`.
-- **Phase 4 calibrated minimum**:
-  - `superpowers@claude-plugins-official` v5.1.0 — skills collection (no MCP server). 14 skills + 1 SessionStart hook + 0 agents (Phase 1 INVENTORY's 17/4/1 figure double-counted; verified via direct listing of the v5.1.0 cache during Phase 5 audit).
-  - `mempalace@mempalace` v3.3.2 — memory MCP server + 1 skill. 39 mempalace_* tools (deferred-load via ToolSearch).
-- **`mcpServers` direct**: empty in the harness reference. Phase 5 daily-driver review expands for Rock's daily use against the rebuilt `~/.claude/settings.json` per Q3.
-- **Default posture**: deny all MCP servers not on the allowlist. Unlisted servers do not reach `getAllBaseTools()` at tool pool assembly time.
-- **Pre-trust audit habit**: SessionStart hook gates in-repo `.claude/`/`.mcp.json` files. Direct MCP server additions go through the `mcp-server-pre-trust-audit` skill in `mac/harness/skills/`.
-- **context7 supply-chain note**: the plugin's `.mcp.json` declares `npx -y @upstash/context7-mcp` (unpinned). Phase 4 elected not to enable in the harness reference; Phase 5 daily-driver review picks between pinning the npx version, globally installing with a pin and invoking by absolute path (already at v2.1.3 on machine), or skipping.
+Concrete contents:
 
-### 8. Subagent delegation
+Path allow/deny lists for file operations (e.g., never write to `/etc/`, never read from `~/.ssh/`).
 
-The Agent tool and worktree isolation. Subagent model selection has cost and cache-economy consequences per QC.4a.
+Command allow/deny lists for shell execution (e.g., block `curl | sh` patterns, gate `rm -rf` on specific paths).
 
-- **Worktree isolation**: enabled.
-- **Default subagent model**: `claude-opus-4-7` (same family as the main session default). Same-family parent/subagent share cache per QC.4a; the cache-economy gain on a build of this size outweighs the per-invocation cost difference vs Haiku.
-- **Custom agent definitions (2, in `mac/harness/agents/`)**:
-  - `reviewer.md` — Phase 5 Writer/Reviewer pattern. Audits Phase 5 outputs against QC + threat model + principles. Returns structured findings; does not edit. Same-family Opus 4.7 cache lineage.
-  - `inventory.md` — read-only discovery scan, codifies the Phase 1 role for future re-runs.
-- **When to spawn**: file-scan tasks touching more than 20 files (Phase 1 inventory used this pattern), Writer/Reviewer audit (Phase 5), parallelizable verification work where the parent and subagent agree on success criteria.
+Secret-detection patterns (supplementing gitleaks with project-specific patterns).
 
-### 9. Persistence
+Network egress policies for tool calls that would fetch external content.
 
-The session log is the only durable component per SAGE §4.10.
+Scope: deterministic. These rules are consulted by hooks, which fail closed (AP.8).
 
-- **Session log location**: `~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl`. The encoded-cwd replaces `/` with `-`. Format is JSONL, one event per line.
-- **Session log retention**: 90 days (Phase 2 Q11). The `Stop-prune-session-logs.py` hook deletes per-session JSONL files older than 90 days with a 24-hour marker guard at `~/.claude/.last-cleanup-90d`. Aggregate `~/.claude/history.jsonl` is exempt (rolling buffer).
-- **Memory tools**: Phase 4 adopted MemPalace v3.3.2 alongside Claude Code's native auto-memory (Phase 2 Q4 enabled). Auto-memory carries free-form per-project memories; MemPalace carries structured drawers + wings + rooms + AAAK diaries + knowledge-graph triples for the workflows where auto-memory's free-form `.md` format does not fit.
-- **Compaction interaction**: session log persists across compactions; harness state does not.
+Rationale: AP.1, AP.8. Rules that matter are enforced by hooks, not by CLAUDE.md.
 
-## Skills
+### Layer 4: Skills
 
-Two skills live in `mac/harness/skills/`, written in Phase 4 to close foundation gaps the harness CLAUDE.md describes but does not operationalize:
+The `harness/skills/` directory holds the lazy-loadable guidance that informs Claude Code's behavior on specific tasks. Each skill has a `SKILL.md` that Claude reads when the skill is relevant.
 
-- **`mcp-server-pre-trust-audit/`** — fires when a request mentions registering, adding, or installing an MCP server. Six-check audit: license, source review, network egress, version pin, secret handling, tool subset. Closes the gap above `~/.claude/mcp.json` that the SessionStart hook does not cover.
-- **`seed-evaluation/`** — fires when a request proposes adopting any external tool, library, plugin, skill collection, agent definition, or hook library. Codifies the `foundation/03` two-stage methodology (pre-filter under 30 seconds + deep-eval through three real exercises). Replaces rubric scoring with binary integrate / integrate-with-constraints / reject decisions.
+The primary security skill is `harness/skills/security-review/`. It is the pre-generation guidance layer of the three-layer security stack. It loads anti-pattern context by file type: Python files load the Python anti-pattern section, JavaScript files load the JS section, and so on.
 
-Adopted from the `superpowers@claude-plugins-official` plugin: 14 skills (brainstorming, dispatching-parallel-agents, executing-plans, finishing-a-development-branch, receiving-code-review, requesting-code-review, subagent-driven-development, systematic-debugging, test-driven-development, using-git-worktrees, using-superpowers, verification-before-completion, writing-plans, writing-skills) plus 1 SessionStart hook.
+Other skills land here per Phase 4 evaluation: domain-specific guidance for the projects Rock works on, language-specific best practices, framework-specific patterns.
 
-## Quality Contract operationalization
+Scope: advisory, but with a structural advantage over CLAUDE.md: skills load on demand, so they don't consume cached prefix budget unless invoked.
 
-| QC | Mac implementation |
-|---|---|
-| QC.1 Security | Homebrew pins (post-launch operational step); SBOM via `syft` (deferred, post-launch); secret scan via `gitleaks` v8.30.0 wired in pre-commit 2026-05-11 (replaced `detect-secrets`); SAST via `semgrep` v1.162.0 installed via pipx and wired in pre-commit 2026-05-11 (the broken Anaconda install is shadowed by the pinned pre-commit-managed version, not removed); shell linting via `shellcheck` v0.11.0 wired in pre-commit. |
-| QC.2 Tight code | Reviewer subagent in Phase 5 audits scope. No new abstractions, no new test scaffolding without explicit decision recorded in the phase output or commit message. |
-| QC.3 Comments | Comment the why. Hook scripts and skill bodies carry rationale headers. |
-| QC.4a Cache (API/SDK) | Direct API/SDK use carries explicit `"ttl": "1h"` on cache_control. Telemetry on. Documented in `mac/harness/settings.json`. |
-| QC.4b Cache (Claude Code) | CLAUDE.md hierarchy under 400 lines total. Drift-check covers project hierarchy plus user-level `@import` chain (Q10 widening landed 2026-05-11). Currently FAILs at 1161 lines worst case until the Q3 `~/.claude/` rebuild trims the legacy SuperClaude framework chain. `<system-reminder>` blocks carry dynamic content. |
-| QC.5 Versioning | Claude Code pinned to `v2.1.*` minor-version range (currently 2.1.138). Re-evaluation trigger: minor bump (v2.2.x). |
+Rationale: AP.7 (lazy load) and AP.2 (three-layer security pre-generation guidance position).
 
-## Threat model adaptations for Mac
+### Layer 5: Agents and hooks
 
-The threats in `foundation/01-threat-model.md` apply unchanged. Mac-specific notes:
+The `harness/agents/` directory holds specialized subagent definitions for tasks that benefit from delegation. The `harness/hooks/` directory holds the hook scripts that the settings.json registers.
 
-- **macOS Gatekeeper and code signing**: assumed enabled. Disabled Gatekeeper is a host-OS misconfiguration the harness does not defend against.
-- **FileVault disk encryption**: assumed enabled. The harness's secret-protection posture relies on the host disk being encrypted at rest.
-- **Keychain**: used for credential storage where applicable. Phase 1 surfaced a HIGH-severity plaintext Hetzner Cloud API token in `~/.claude/mcp.json`; the env-var indirection (`HCLOUD_TOKEN=${env:HCLOUD_TOKEN}` backed by Keychain or 1Password CLI) is a post-Phase-5 operational step paired with the `~/.claude/` rebuild.
-- **System Integrity Protection (SIP)**: assumed enabled.
-- **Network egress monitoring**: not installed and not adopted. Phase 2 Q7 elected to skip; the permission layer + MCP allowlist + per-server review carry the egress defense.
+Hooks of interest:
 
-## Build state
+`post-tool-use-semgrep.sh` runs Semgrep on changed files after Write or Edit. If findings, returns the rule ID, line, and message to Claude via hook output. This is the SecureForge Appendix C commit-time hardening pattern.
 
-- Foundation documents: written and committed (Batch 1).
-- Mac section structure: written and committed (Batch 2).
-- Phase 0 (goals and architecture): complete 2026-05-11. Decisions recorded in `phase-outputs/PHASE-0-DECISIONS.md`.
-- Phase 1 (discovery): complete 2026-05-11. Inventory in `phase-outputs/INVENTORY.md` (212 lines).
-- Phase 2 (architecture interview): complete 2026-05-11. 12 answers in `phase-outputs/ANSWERS.md`.
-- Phase 3 (deterministic layer): complete 2026-05-11. 6 hooks, 6 deny rules, populated `settings.json`, 5-candidate deep-eval.
-- Phase 4 (extension layer): complete 2026-05-11. 2 skills, 2 agents, `enabledPlugins` calibrated minimum, 6-candidate deep-eval.
-- Phase 5 (wire and document): complete 2026-05-11. Polished documentation, Reviewer audit pass.
+`pre-tool-use-shell-audit.sh` logs shell command invocations before execution. Does not block (logging only).
 
-Post-Phase-5 operational steps landed in their own commits: drift-check widening per Q10 (commit `920d5e7`); pre-commit rewire from `detect-secrets` to `gitleaks` plus `semgrep` clean install via pipx plus `shellcheck` install for direct verification (one combined commit; pre-commit git hooks installed at the same time).
+`session-start.sh` runs the drift check on session start and surfaces any drift before the session begins.
 
-Remaining post-Phase-5 operational steps: rebuild `~/.claude/` per Q3, bulk-acknowledge tool for the 44 in-repo `.claude/` directories Phase 1 surveyed, Hetzner Cloud token env-var indirection, audit the 13 daily-driver plugins for the rebuilt config.
+`pre-compact-preserve.sh` ensures the relevant phase context survives the compaction event.
 
-## Version pins
+Agents of interest:
 
-Re-evaluated on every Claude Code minor-version bump.
+`writer-reviewer` agent pair for Phase 5 documentation: one writes, one reviews against SSDF practices.
 
-| Component | Pinned version | Next-evaluation trigger |
-|---|---|---|
-| Claude Code | v2.1.* (currently 2.1.138) | Minor-version bump (v2.2.x) |
-| macOS | 26.3 (25D125) | Major-version release (macOS 27) |
-| Node | v24.10.0 | Node LTS major (v26 LTS) |
-| Python | 3.13.9 | Python minor release (3.14 / 3.15) |
-| Homebrew | 5.1.10 | Quarterly review (next: 2026-08-10) |
-| gitleaks | 8.30.0 (binary + pre-commit hook) | Security advisory, or major release (v9) |
-| trivy | 0.69.0 | Security advisory, or major release (v1.x) |
-| semgrep | 1.162.0 (pipx; pre-commit hook pins the same version) | Security advisory, or major release (v2) |
-| shellcheck | 0.11.0 (binary; pre-commit shellcheck-py wraps v0.10.0.1) | Security advisory, or major release (v1) |
-| superpowers plugin | 5.1.0 | Plugin lastUpdated drift past 90 days, or upstream major (6.0.x) |
-| MemPalace plugin | 3.3.2 | Security advisory, major release (4.0.x), or add_drawer content-corruption bug unfixed 90 days |
-| Serena | deferred (user-disabled in current `~/.claude/settings.json`; revisit on specific use case) | Set when adopted |
-| detect-secrets | removed 2026-05-11 (superseded by gitleaks in pre-commit) | Re-evaluation only if gitleaks coverage gap surfaces |
-| cosai-oasis/project-codeguard | deferred (pre-1.0, not installed) | Codeguard 1.0 release, or agentcontrolstandard.ai ship |
+`security-reviewer` subagent for deep security analysis of generated code beyond what Semgrep catches.
+
+Scope: deterministic for hooks, advisory for agents. Agents are still model-driven; they just have a constrained scope.
+
+Rationale: AP.1, AP.2.
+
+## The three-layer security stack in context
+
+The security architecture cuts across layers 4 and 5 specifically. Here's where each layer of the security stack lives:
+
+Pre-generation guidance lives in Layer 4: `harness/skills/security-review/`. Loaded lazily when files of relevant types are touched. Content seeded from sec-context taxonomy (R.2.2), attributed under CC BY 4.0.
+
+Commit-time hardening lives in Layer 5: `harness/hooks/post-tool-use-semgrep.sh`. Runs deterministically after every Write or Edit. Implements the SecureForge Appendix C pattern (R.2.1, MIT).
+
+Post-generation validation lives in `.pre-commit-config.yaml` at repo root. Same Semgrep tool, different invocation context (pre-commit hook rather than PostToolUse hook), supplemented by gitleaks, shellcheck, and the optional secondary scanners in `mac/evaluations/`.
+
+The three layers are independent. Removing any one weakens the others. The SecureForge research (R.2.1) shows the combination outperforms any single layer at equivalent compute budget.
+
+## Build sequence and phase boundaries
+
+The harness is built in five phases (Phase 0 through Phase 5), with Phase 0 establishing scope before the build begins. Each phase produces specific artifacts:
+
+Phase 0 produces the goal statement, scope boundaries, success criteria, and constraint inventory. Deliverable: `phase-outputs/PHASE_0_GOALS.md`.
+
+Phase 1 produces the discovery output: an inventory of existing tools and configurations, a conflicts list of incompatibilities, and a questions list to drive Phase 2. Deliverables: `phase-outputs/INVENTORY.md`, `phase-outputs/CONFLICTS.md`, `phase-outputs/QUESTIONS.md`.
+
+Phase 2 produces the architecture decisions: an answers document keyed to the Phase 1 questions, an updated `ARCHITECTURE.md`, and the seed list for Phase 3 and Phase 4 evaluation. Deliverable: `phase-outputs/ANSWERS.md`.
+
+Phase 3 produces the deterministic layer: `harness/CLAUDE.md`, `harness/settings.json.template`, `harness/rules/*`, `harness/hooks/*`, and the wired `.pre-commit-config.yaml`. Includes the PostToolUse Semgrep hook (the commit-time hardening layer of the security stack).
+
+Phase 4 produces the extension layer: `harness/skills/*`, `harness/agents/*`. Includes the `security-review` skill (the pre-generation guidance layer).
+
+Phase 5 wires it all together, runs integration tests, and finalizes the documentation. Includes the writer/reviewer agent pattern documented in the SAGE analysis (R.2.3).
+
+Phase boundaries are not arbitrary. They map to Quality Contract properties and to the threat model: Phase 3 deliverables address T.4 (hook bypass) and T.6 (secret exposure); Phase 4 deliverables address T.1 (benign vulnerability generation) and T.2 (prompt injection); Phase 5 verifies T.7 (configuration drift) is mitigated by the drift-check infrastructure.
+
+## What this architecture does not include
+
+A custom model. Claude Code is the substrate. We configure it, we don't replace it.
+
+A web service. The harness runs locally. Outputs that would otherwise go through a service (SBOM generation, vulnerability reports) are produced by command-line tools.
+
+A long-running daemon. Hooks run synchronously inside Claude Code sessions. No background process maintains harness state.
+
+A user management system. The harness is single-user. Multi-developer extensions are out of scope.
+
+These omissions are deliberate. Each one represents a class of complexity the harness explicitly does not buy. The cost of adding any of them would dwarf the cost of the current build, and none of them are needed for the actual problem the harness solves.

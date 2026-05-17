@@ -1,89 +1,102 @@
-# Phase 1 — Discovery (Windows)
+# Phase 1: Discovery (Windows)
+
+Read-only inventory of the Windows + WSL2 environment.
+
+---
 
 <role>
-You are discovering what is already on this Windows machine that the harness needs to know about: existing Claude Code configuration files, installed CLI tools, MCP server configurations in cloned repositories, pre-existing skills or hooks, WSL2 distribution state, and any conflict between what Phase 0 recorded and what's on disk. Phase 1 produces an inventory and a conflicts list. You do not change anything. You read, you record, you flag.
-
-Discovery is read-only. The threat model in `foundation/01-threat-model.md` names the pre-trust initialization class (CVE-2025-59536). Phase 1 is structurally similar: you are looking at code that could otherwise execute at session start. The discipline is to look at the files, not to load them into Claude Code through any configuration mechanism.
+You are a senior harness engineer in the discovery phase on Windows + WSL2. Inventory the Windows host, the WSL2 environment, and surface conflicts.
 </role>
 
 <effort>high</effort>
-
-<mode>plan mode for the entire phase. Phase 1 writes only build-internal phase outputs.</mode>
-
+<mode>plan</mode>
 <thinking>adaptive</thinking>
+<context_budget>Run /context at start.</context_budget>
+<parallel_tool_calls>Heavy use.</parallel_tool_calls>
+<scope>Strict. `phase-outputs/INVENTORY.md`, `CONFLICTS.md`, `QUESTIONS.md` only.</scope>
 
-<context_budget>Run /context at start and end. Phase 1 reads many files. The inventory subagent absorbs most of the read cost. Record in `phase-outputs/PHASE-1-CONTEXT.md`.</context_budget>
+<context>
+The Windows host runs Claude Code natively. The WSL2 instance runs the security tooling. Inventory both.
 
-<parallel_tool_calls>
-The inventory scan touches more than 20 files. Spawn an inventory subagent for the scan.
-</parallel_tool_calls>
-
-<use_parallel_tool_calls>
-Within the inventory subagent, use parallel directory listings and `Get-Item` invocations against independent directories.
-</use_parallel_tool_calls>
-
-<scope>
-Apply only to:
-- `phase-outputs/PHASE-1-CONTEXT.md` (writes)
-- `phase-outputs/INVENTORY.md` (writes)
-- `phase-outputs/CONFLICTS.md` (writes: any conflicts with Phase 0)
-- `windows/evaluations/pre-filter.md` (updates: candidate rows where discovery finds a candidate installed)
-
-Do not modify any file in `foundation/`, `research/`, `windows/prompts/`, `windows/ARCHITECTURE.md`, `windows/harness/`, or `windows/scripts/`. Do not write hooks, skills, agents, or deny rules. Do not install or remove any tools. Do not edit existing `.claude/` directories anywhere on the machine.
-</scope>
-
-## What to do
-
-Read `phase-outputs/PHASE-0-DECISIONS.md` and `windows/ARCHITECTURE.md` to understand what Phase 0 recorded. Spawn the inventory subagent.
-
-The inventory subagent's task, without modifying:
-
-1. **Claude Code configuration on this Windows machine**: `%USERPROFILE%\.claude\`, `%APPDATA%\claude\`, or equivalent paths the installed Claude Code uses. The `settings.json`, `CLAUDE.md`, hooks, skills, agents, and MCP server configurations already present.
-2. **In-repo Claude Code configurations**: every `.claude/` directory in cloned repositories under whatever paths the Windows machine keeps source. Pre-trust audit habit starts here.
-3. **WSL2 instance Claude Code configurations**: if WSL2 is in scope, the WSL2 home directory carries its own `~/.claude/` and per-repo configurations. The inventory records WSL2-side and Windows-side separately.
-4. **Installed CLI tools relevant to the harness**: tools Phase 0 pre-flight verified, plus dependencies (jq, yq, curl, gh, etc.). Verify Windows x86_64 builds where ambiguous. Record native-Windows vs WSL2-only availability per tool.
-5. **MCP server installations**: any MCP servers installed globally (npm global, pipx, winget). Record without invoking.
-6. **Pre-existing skills, hooks, or agents from prior experimentation**: anything pre-dating this repo. Note hook script language (PowerShell, bash, Python) per existing artifact.
-7. **Seed candidate status**: which candidates from `foundation/03-seed-evaluation-methodology.md` are installed, at what version, with Windows x86_64 confirmation.
-8. **Windows-specific signals**: PowerShell module inventory (`Get-Module -ListAvailable` summary), winget package list, Chocolatey/Scoop package list if those package managers are installed, browser presence (relevant for any MCP browser tools), and any host-OS configuration that informs Phase 2 (BitLocker, Defender, AppLocker, WDAC, network monitor).
-
-The subagent returns a structured summary. The main session synthesizes into the three deliverables.
+Mac Phase 1 (`mac/phase-outputs/INVENTORY.md` if available) is the structural reference. Adapt to the Windows + WSL2 environment.
+</context>
 
 <investigate_before_answering>
-Before recording that a tool is installed, run the version command. Memory is not evidence.
+Concrete checks (run in parallel where possible):
 
-Before recording that a `.claude/` directory contains specific hooks, skills, or MCP servers, read the files.
+Windows host:
+```powershell
+wsl.exe --status
+wsl.exe --list --verbose
+claude --version
+choco list --localonly 2>&1 | findstr /i "semgrep gitleaks shellcheck jq"
+where claude
+```
 
-Before recording a Windows x86_64 build is present, verify by file inspection or architecture-naming version output.
+WSL2 environment:
+```powershell
+wsl.exe -e bash -c "uname -a && lsb_release -a"
+wsl.exe -e bash -c "which semgrep gitleaks shellcheck jq pre-commit python3"
+wsl.exe -e bash -c "semgrep --version 2>&1 | head -1; gitleaks version 2>&1; shellcheck --version 2>&1 | head -2"
+wsl.exe -e bash -c "python3 --version && pip3 list --user 2>&1 | head -30"
+```
 
-Before recording a conflict with Phase 0, quote the exact line from `windows/ARCHITECTURE.md` and the observation that contradicts it.
+Path translation:
+```powershell
+wsl.exe -e bash -c "ls /mnt/c/Users/$env:USERNAME/harness-engineering/ 2>&1 | head -5"
+```
 
-Before recording a tool as "WSL2-only" or "native Windows", verify by inspecting the install location and `where` (PowerShell) or `which` (WSL2) output.
+Git configuration on Windows:
+```powershell
+git config --get core.autocrlf
+git config --get core.eol
+```
+
+Memory and disk on the host and inside WSL2.
 </investigate_before_answering>
 
-## Deliverables
+<instructions>
+Produce three files in `phase-outputs/`.
 
-Three writes and one update:
+**`INVENTORY.md`** sections:
 
-1. `phase-outputs/INVENTORY.md`: structured record. Sections per category. Each item has path, version where applicable, architecture and execution-context confirmation where ambiguous, one-line context note.
-2. `phase-outputs/CONFLICTS.md`: places where discovery contradicts Phase 0. Empty if none.
-3. `phase-outputs/PHASE-1-CONTEXT.md`: start/end `/context` output and delta.
-4. `windows/evaluations/pre-filter.md`: rows updated where discovery filled the architecture, maintainership, or license columns.
+Windows host: OS version, Claude Code version, Chocolatey packages of interest.
 
-## Verification
+WSL2 environment: distribution, kernel, key packages, Python environment.
 
-Before reporting complete:
+Path translation: Windows-vs-WSL2 path conventions, autocrlf settings.
 
-- Inventory and conflicts files have appropriate content.
-- `<NEEDS-WINDOWS-PORT-VALIDATION>` markers in pre-filter.md are reduced as discovery fills the architecture column.
-- The drift check returns 0.
+Security tools: tool, version, install method (WSL2 apt, WSL2 pip, Windows Chocolatey, missing).
 
-Report artifact paths, line counts, conflict count.
+Pre-existing conventions: CLAUDE.md files, pre-commit configs.
 
-## Anti-overengineering
+**`CONFLICTS.md`** entries with severity. Likely Windows-specific conflicts:
 
-Phase 1 does not decide. It records. If inventory surfaces a tool that looks like it would fit a Phase 3 or Phase 4 need, the inventory records the tool's presence and Phase 3 or Phase 4 decides. Do not pre-recommend.
+WSL2 not installed or wrong distribution (blocker).
 
-If a `.claude/` directory in a cloned repo looks suspicious, record the observation. Do not delete or modify. Do not load the repo into Claude Code. Pre-trust audit happens during Phase 3 or out-of-band before Rock opens the repo.
+`core.autocrlf=true` on Windows side (blocker; can corrupt hook script line endings).
 
-The seed pre-filter table updates with discovery findings, not Phase 3 decisions. Result column stays `<TBD>` until Phase 3 or Phase 4 runs the deep evaluation.
+Old WSL2 distribution with outdated package versions (warning).
+
+Semgrep not in WSL2 (blocker).
+
+**`QUESTIONS.md`** numbered multiple-choice. Examples:
+
+"Set Windows-side git to `core.autocrlf=false` for this repo (A), `core.autocrlf=input` (B), or rely on .gitattributes (C)?"
+
+"Invoke hooks through `wsl.exe -e bash` (A), `wsl.exe -d <distro> -e bash` (B), or `wsl.exe -- bash` (C)?"
+
+"How should the harness handle WSL2 cold-start latency on the first hook of a session: pre-warm WSL2 in session-start (A), accept the cold-start cost (B), or use a long-running WSL2 daemon (C)?"
+
+Match the writing rules.
+</instructions>
+
+<deliverable>
+Three files in `phase-outputs/`. Short summary report.
+</deliverable>
+
+<verification>
+`./scripts/drift-check.sh` passes.
+
+Line count: INVENTORY 80-300, CONFLICTS 0-100, QUESTIONS 30-120.
+</verification>

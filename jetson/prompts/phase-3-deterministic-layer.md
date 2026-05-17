@@ -1,137 +1,147 @@
-# Phase 3 — Deterministic Layer (Jetson) [SCAFFOLDED]
+# Phase 3: Deterministic Layer (Jetson) — SCAFFOLDED, NEEDS HARDWARE VALIDATION
 
-**This prompt is scaffolded, not validated.** The structure mirrors `mac/prompts/phase-3-deterministic-layer.md`. Jetson-specific details carry `<NEEDS-JETSON-PORT-VALIDATION>` markers that resolve when Rock executes the Jetson build. Treat each marker as a live question the executing Claude Code session must answer.
+This prompt is the Jetson equivalent of `mac/prompts/phase-3-deterministic-layer.md`. It is scaffolded but not yet validated against actual Jetson hardware. Running it produces output that should match the Mac equivalent in structure, but specific tool paths, install commands, and hook behaviors need verification on the AGX Orin.
+
+The validation work for this phase is itself a deliverable. Document findings in `phase-outputs/PHASE_3_VALIDATION.md` after running the prompt.
+
+---
 
 <role>
-You are writing the deterministic enforcement layer of the Jetson harness: hook scripts, deny rules, sandbox configuration, permission-mode posture in `jetson/harness/settings.json`. Every threat Phase 2 elected to enforce in hooks lands here. Every constraint that must hold every time the harness runs on Jetson lands here.
+You are a senior harness engineer building the deterministic enforcement layer on a Jetson AGX Orin. Your output should achieve capability parity with the Mac Phase 3 deliverables (in `mac/harness/`). Where the Jetson environment requires different tools or paths, document the difference in the relevant artifact's comment block.
 
-This is the most consequential phase for harness security on Jetson. The model has no veto over a hook. Hooks fire regardless of context, prompt design, or conversation length.
+Match the writing rules in the root `CLAUDE.md`. Apply Anthropic anti-overengineering language to code.
 </role>
 
 <effort>xhigh</effort>
-
-<mode>default mode (writes). Phase 3 produces hook scripts, deny rule files, and the settings.json fill.</mode>
-
+<mode>default</mode>
 <thinking>adaptive</thinking>
+<context_budget>Run /context at start. Document delta. Plan for one compaction.</context_budget>
+<parallel_tool_calls>Parallel reads for foundation, Phase 2 outputs, and Mac reference files.</parallel_tool_calls>
+<scope>Strict. Only artifacts named in deliverables.</scope>
 
-<context_budget>Run /context at start and end. Phase 3 reads several foundation documents, Phase 2 outputs, and `Claude_Architecture.md` for hook-event specifics. Record in `phase-outputs/PHASE-3-CONTEXT.md`.</context_budget>
+<context>
+Phase 2 locked the architecture decisions. Read `phase-outputs/ANSWERS.md` and `jetson/ARCHITECTURE.md` first.
 
-<parallel_tool_calls>
-Read inputs in parallel: `phase-outputs/ANSWERS.md`, `phase-outputs/INVENTORY.md`, `jetson/ARCHITECTURE.md`, `jetson/harness/settings.json.template`, `jetson/harness/rules/README.md`, `jetson/harness/hooks/README.md`, `foundation/01-threat-model.md`, `foundation/02-architectural-principles.md`, relevant sections of `research/Claude_Architecture.md`. Also read the Mac equivalent (`mac/harness/hooks/`, `mac/harness/rules/`, `mac/harness/settings.json`) if Mac has built, for porting reference.
-</parallel_tool_calls>
+The Mac Phase 3 deliverables are in `mac/harness/`. They are the reference. The Jetson outputs should be capability-equivalent. Specific differences:
 
-<scope>
-Apply only to:
-- `jetson/harness/hooks/` (writes: one shell or Python script per hook)
-- `jetson/harness/rules/` (writes: one markdown file per rule)
-- `jetson/harness/settings.json` (writes: populated settings file. Template stays unchanged.)
-- `jetson/evaluations/deep-eval.md` (updates: integration results for security-tool seeds)
-- `phase-outputs/PHASE-3-CONTEXT.md` (writes)
-- `phase-outputs/PHASE-3-NOTES.md` (writes: rationale per hook and per rule)
+The hook scripts may need a different jq invocation if the Jetson jq version is older.
 
-Do not modify `foundation/`, `research/`, `jetson/prompts/`, `jetson/harness/CLAUDE.md`, `jetson/harness/skills/`, `jetson/harness/agents/`, `jetson/ARCHITECTURE.md`, or `jetson/README.md`.
-</scope>
+The Semgrep install command differs (pip into JetPack Python or pip into a pyenv).
 
-## What to do
+`paths.deny` extends with Tegra-specific paths from `jetson/ARCHITECTURE.md`.
 
-Three kinds of artifacts: hook scripts, deny rule files, populated `settings.json`. Same as Mac Phase 3 with port validations.
+`commands.deny` extends with Jetson power-management patterns from Phase 2 decisions.
 
-### Hook scripts
+The `settings.json.template` `_validated_claude_code_range` may differ from Mac.
 
-For each threat Phase 2 elected to enforce in a hook, write a hook script in `jetson/harness/hooks/`. Each script:
-
-- Carries a header block (purpose, threat addressed, foundation citation, verification test).
-- Is shellcheck-clean for shell scripts. SAST-clean for Python.
-- Returns the correct Zod-validated output schema per Claude_Architecture.md §5.3 and §6.
-- Sets `permissionDecision` to `deny` or `ask` when blocking; never to `allow` to bypass subsequent checks.
-- Returns within a reasonable timeout.
-
-Mac wrote 6 Python hooks uniformly (per `phase-outputs/PHASE-3-NOTES.md`), choosing Python over shell because every hook parses JSON on stdin. If Jetson follows the same Python uniformity, the port verification narrows to Python runtime parity (interpreter path, `json` stdlib, ARM64 wheels for any imported libs). If Jetson elects shell scripts, the per-hook port verifies:
-
-- GNU vs BSD coreutils command compatibility (`grep`, `sed`, `find`, `xargs`). Mac runs BSD; Jetson runs GNU.
-- Linux-specific path constructs (e.g., `/proc/`, `/sys/`, `/dev/shm/`) that do not exist on Mac.
-- Linux signal handling differences from macOS.
-- Bash version (`echo $BASH_VERSION`) matches expectations on the JetPack base.
-
-Mandatory hooks (drawn from `foundation/01-threat-model.md`):
-
-- **PreToolUse subcommand cap**: rejects Bash chains over 50 subcommands. Adversa.ai 2026 bypass class.
-- **PreToolUse external write gate**: requires explicit confirmation for writes outside the working directory. Principle 3 reversibility.
-- **SessionStart pre-trust audit**: refuses to load a project whose `.claude/settings.json` or `.mcp.json` was modified after the last recorded audit. CVE-2025-59536 class. Cadence per Phase 2.
-- **PreToolUse MCP server allowlist enforcement**: rejects MCP tool calls whose server is not on the allowlist.
-
-Optional hooks Phase 2 may have elected: same as Mac (PreCompact preserver, UserPromptSubmit injection scanner, PostToolUse output classifier).
-
-### Deny rules
-
-For each blanket-deny pattern Phase 2 elected, write a file in `jetson/harness/rules/`. Each rule file holds the pattern, the threat or QC property addressed, the citation, and the test verifying the rule fires.
-
-Mac wrote 6 deny rules (per `phase-outputs/PHASE-3-NOTES.md`): bash-deny-git-push-force, bash-deny-dangerously-skip-permissions, bash-deny-sudo, bash-deny-rm-rf-root, filesystem-deny-write-secrets, mcp-deny-server-prefix-default. Pattern-syntax caveat from Mac Phase 5 audit (F02): empty-prefix patterns like `Bash(:*--dangerously-skip-permissions*)` do not enforce in Claude Code v2.1.138; the Mac rule was simplified to `Bash(claude --dangerously-skip-permissions:*)`. Per-rule port verifies:
-
-- Linux path conventions in the pattern match the Jetson filesystem layout. Path separators are forward slash (same as Mac, no change). Absolute paths start at `/` (same).
-- `bash-deny-rm-rf-root` Mac patterns target `~/`, `$HOME`, `/Users/`. Jetson equivalents add `/home/`, `/root/` and drop `/Users/`.
-- Rules using regex match GNU `grep -E` extended regex semantics (verify any pattern that worked under Mac BSD `grep`).
-
-Examples ported from Mac patterns:
-
-- `bash-deny-rm-outside-cwd.md`: same pattern, Linux verification.
-- `bash-deny-curl-without-allowlist.md`: same pattern, Linux verification.
-- `filesystem-deny-write-secrets-dir.md`: same pattern, Linux verification.
-- `mcp-deny-server-prefix-default.md`: same pattern, no platform delta.
-
-### settings.json fill
-
-Update `jetson/harness/settings.json` (not the template) with the populated values. Same structure as Mac but with the Jetson-specific paths and the ARM64 Linux Claude Code version pin from Phase 0.
-
-The MCP server allowlist stays empty. Phase 4 populates.
-
-### Deep-evaluate security-tool seeds
-
-Phase 1 surveyed and pre-filtered. Phase 3 deep-evaluates survivors that touch the deterministic layer, with the Jetson-specific architecture-validation check added per `jetson/evaluations/deep-eval.md` format.
-
-### Anti-overengineering block
-
-Hooks and rules address Phase 2 elected threats. Do not add hooks for threats Phase 2 did not elect. Record new threats surfaced in Phase 3 in `PHASE-3-NOTES.md` for Phase 2 to revisit.
-
-Do not create new abstractions or helper libraries. Hook script is self-contained: header, logic, schema-correct return. If two hooks share logic, duplication is acceptable.
-
-Do not write test scaffolding beyond what the rule and hook headers prescribe.
-
-Do not edit `jetson/harness/CLAUDE.md`. Phase 5.
+The "needs validation when ported" markers in this prompt are real. Do not assume the Mac output works on Jetson. Verify on hardware.
+</context>
 
 <investigate_before_answering>
-Before writing a hook that returns a specific Zod schema field, read `research/Claude_Architecture.md` §5.3 and §6.
+Read in full:
 
-Before claiming a deny rule pattern matches a specific behavior, write the rule and exercise it against a test input on Linux.
-
-Before recording that a security tool integrates cleanly on Jetson, run the tool against known-vulnerable and known-clean fixtures.
-
-Marker resolution: for each ported Mac pattern, run the equivalent on Jetson and confirm behavior matches. Mac Phase 3 validated all 15 hook+rule test cases first run (per `phase-outputs/PHASE-3-NOTES.md`); ARM64 Linux baselines its own equivalent set. The validation outcome lands in the hook or rule header.
+- `phase-outputs/PHASE_0_GOALS.md`, `ANSWERS.md`
+- `jetson/ARCHITECTURE.md`
+- `mac/harness/CLAUDE.md`, `mac/harness/settings.json.template`, `mac/harness/rules/*`, `mac/harness/hooks/*`
+- `mac/prompts/phase-3-deterministic-layer.md` (the validated reference prompt)
+- `foundation/00-quality-contract.md`, `01-threat-model.md`, `02-architectural-principles.md`
 </investigate_before_answering>
 
-## Deliverables
+<validation_markers>
+The deliverables below carry explicit "needs validation when ported" expectations. When producing each artifact, run the corresponding validation step and document the result.
 
-- Hook scripts in `jetson/harness/hooks/`, one per Phase-2-elected threat, each with Jetson port validation outcome in header.
-- Deny rule files in `jetson/harness/rules/`, one per blanket-deny pattern.
-- Populated `jetson/harness/settings.json` with all Phase 3 fields filled; MCP allowlist deferred to Phase 4.
-- Updated `jetson/evaluations/deep-eval.md` with security-tool integration outcomes (including ARM64 Linux validation).
-- `phase-outputs/PHASE-3-NOTES.md` with rationale.
-- `phase-outputs/PHASE-3-CONTEXT.md`.
+For `harness/CLAUDE.md`: validate that the version pin matches the Jetson Claude Code installation reported in Phase 1.
 
-## Verification
+For `harness/settings.json.template`: validate that the hook command paths exist on the Jetson filesystem. Verify the bash interpreter path.
 
-Before reporting complete:
+For `harness/rules/paths.deny`: validate that the Tegra-specific paths exist on this Jetson installation. If a path doesn't exist, decide whether to keep it (preventive coverage) or remove it.
 
-- `find jetson/harness/hooks -name '*.sh' -exec shellcheck {} +` clean.
-- `python3 -c "import json; json.load(open('jetson/harness/settings.json'))"` parses.
-- For each hook, run its header verification command and confirm expected return.
-- `bash scripts/drift-check.sh` returns 0.
-- `wc -l jetson/harness/hooks/* jetson/harness/rules/* jetson/harness/settings.json` reports counts.
+For `harness/hooks/post-tool-use-semgrep.sh`: run it against a synthetic SQL injection test file on the Jetson. Verify Semgrep catches the pattern and the hook surfaces the finding.
 
-Report hook count, deny rule count, line counts, validation outcomes.
+For `harness/hooks/session-start.sh`: run it and verify the drift check executes without permission issues on the Jetson filesystem.
 
-## Anti-overengineering reminder
+For each validation, write the command run and the actual output to `phase-outputs/PHASE_3_VALIDATION.md`.
+</validation_markers>
 
-The trap is starting to feel productive by writing more hooks than Phase 2 elected. Resist. Every additional hook is additional surface. The foundation principle: hooks enforce what must hold every time.
+<instructions>
+Produce the artifacts in items 1-7 below, then run the verification in item 8.
 
-When in doubt about hook vs deny rule, prefer deny rule. Simpler to audit, faster to evaluate. Hooks reserved for cases deny rules cannot express.
+### 1. `jetson/harness/CLAUDE.md`
+
+TRACT pattern. Capability-equivalent to `mac/harness/CLAUDE.md` with Jetson-specific status section adjustments. Under 200 lines.
+
+Trace: QC.4b, T.7.
+
+### 2. `jetson/harness/settings.json.template`
+
+JSON template. Mirror the Mac template with Jetson-specific differences from Phase 2:
+
+Hook command paths use the Jetson harness directory structure.
+
+`permissions.deny` extends with Tegra paths.
+
+`_validated_claude_code_range` reflects the Jetson-validated range.
+
+Trace: AP.1, QC.1, T.4.
+
+### 3. `jetson/harness/rules/` directory
+
+Same files as Mac (`paths.deny`, `paths.allow`, `commands.deny`, `secrets.patterns`, `README.md`). Extend the deny lists with Jetson-specific entries from Phase 2.
+
+Trace: T.2, T.5, T.6.
+
+### 4. `jetson/harness/hooks/post-tool-use-semgrep.sh`
+
+Byte-identical to the Mac version unless Phase 2 surfaced a Jetson-specific reason to diverge. The hook should work the same way on both platforms because it uses `#!/usr/bin/env bash` and depends on jq and Semgrep that are both available on ARM64.
+
+Validation: run the hook against `/tmp/test-sqli.py` containing `cursor.execute(f"SELECT * FROM users WHERE id = {user_id}")`. Verify Semgrep flags the SQL injection. Document result in `PHASE_3_VALIDATION.md`.
+
+Trace: QC.1, T.1, AP.2.
+
+### 5. `jetson/harness/hooks/pre-tool-use-shell-audit.sh`
+
+Same as Mac.
+
+### 6. `jetson/harness/hooks/session-start.sh`
+
+Same structure as Mac. The validated Claude Code range constant may differ. Verify.
+
+### 7. `jetson/harness/hooks/pre-compact-preserve.sh`
+
+Same as Mac.
+
+### 8. Verification and validation
+
+Run:
+
+```bash
+shellcheck jetson/harness/hooks/*.sh
+./scripts/drift-check.sh
+```
+
+Both must pass.
+
+Run the post-tool-use hook validation described in `validation_markers`. Document outcomes in `phase-outputs/PHASE_3_VALIDATION.md`.
+
+If any validation fails, the Phase 3 deliverables are incomplete. Fix and re-run before declaring Phase 3 done on Jetson.
+
+### 9. Commit
+
+Follow the AP.5 template. The commit message Why field cites the QC properties, threat IDs, and Mac reference commits.
+
+After commit, update `jetson/README.md` build status table: Phase 3 moves from "Scaffolded" to "Validated" if all validation steps pass.
+</instructions>
+
+<deliverable>
+Artifacts in items 1-7, validation document in item 8, commit in item 9. Short report summarizing the validation outcomes.
+</deliverable>
+
+<verification>
+The Semgrep hook must flag a synthetic SQL injection on the Jetson exactly as it does on Mac. If the rule pack coverage differs between platforms, that's a finding to document and resolve (likely by aligning the pinned Semgrep version).
+
+All hook scripts must pass `shellcheck`.
+
+The drift check must pass.
+
+If validation fails on any step, do not declare Phase 3 validated. Document the failure and propose a resolution.
+</verification>

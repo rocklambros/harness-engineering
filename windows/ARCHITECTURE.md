@@ -1,166 +1,159 @@
-# Windows harness architecture
+# Windows Harness Architecture
 
-The Windows build of the harness. This document is the operational reference for how the nine harness components from `foundation/02-architectural-principles.md` land on Windows 11 x86_64. Two kinds of unresolved blocks:
+The Windows harness mirrors the Mac architecture in capability while inverting how the tools execute. The five layers and three-layer security stack are identical; the invocation context for Layer 2 and Layer 3 is WSL2 rather than native Windows.
 
-- `<TBD-PHASE-0>` blocks are filled by the Phase 0 session against the live environment.
-- `<NEEDS-WINDOWS-PORT-VALIDATION>` blocks are assertions ported from the Mac-validated build that must be verified on Windows before being treated as fact.
+If you have not read `mac/ARCHITECTURE.md`, read it first. This document is a delta plus the WSL2 decision rationale.
 
-The document follows the SAGE nine-component decomposition (§4) and operationalizes each Quality Contract property per `foundation/00-quality-contract.md` for this platform.
+## System context
 
-## Environment baseline
+The Windows harness runs Claude Code on Windows 10/11 (x86-64) with a WSL2 instance running Ubuntu 22.04 LTS as the tool execution environment. Claude Code on Windows is a native Windows application; the security tools (Semgrep, gitleaks, shellcheck, jq, pre-commit) are native Linux binaries running inside WSL2.
 
-| Property | Value |
-|---|---|
-| Operating system | Windows 11 on x86_64 |
-| Windows version pin | `<TBD-PHASE-0>` (record build number) |
-| Hardware | `<TBD-PHASE-0>` (CPU, RAM, storage class) |
-| Shell | `<TBD-PHASE-0>` (PowerShell 7+ preferred; PowerShell 5.1 inbox if present) |
-| Package manager | winget (primary), Chocolatey or Scoop (secondary if installed) |
-| WSL2 availability | `<TBD-PHASE-0>` (record WSL version, default distribution, kernel) |
-| Node version | `<TBD-PHASE-0>` |
-| Python version | `<TBD-PHASE-0>` |
-| Claude Code version pin | `<TBD-PHASE-0>` (verify Windows x86_64 build at the pinned version) |
-| Working directory | `<TBD-PHASE-0>` |
-| Daily-driver harness path | `<TBD-PHASE-0>` (in-repo, symlinked to `%USERPROFILE%\.claude\`, or WSL2-resident) |
-| BitLocker status | `<TBD-PHASE-0>` (manage-bde -status report) |
-| Microsoft Defender state | `<TBD-PHASE-0>` |
-| AppLocker / WDAC | `<TBD-PHASE-0>` (record whether configured) |
+Filesystem layout:
 
-The version pins are recorded after Phase 0 verifies what is actually installed. Windows x86_64 availability of any pinned tool is verified as part of Phase 0; tools that lack a native Windows build are evaluated against WSL2 fallback per the Phase 2 architecture decision.
+The harness lives in the Windows filesystem (typically `C:\Users\<user>\harness-engineering\` or wherever the user clones it).
 
-## The nine harness components on Windows
+WSL2 sees this filesystem at `/mnt/c/Users/<user>/harness-engineering/`.
 
-### 1. Agent loop
+Hook scripts in `windows/harness/hooks/` are bash scripts. Claude Code on Windows invokes them through `wsl.exe -e bash <path>`.
 
-Owned by Claude Code itself. Configured through model selection, effort level, and session mode.
+Process invocation flow:
 
-- Default model: `<TBD-PHASE-0>` (Opus or Sonnet)
-- Effort level: `xhigh` for build phases, `high` for routine work
-- Session mode default: `default` permission mode
-- Compaction posture: continuous, no manual resets unless a model-version change makes the heuristic stale
-- Claude Code Windows availability: Mac validated `v2.1.138` behaviorally on macOS 26.3 Apple Silicon (per `phase-outputs/PHASE-0-DECISIONS.md`). Verify the installed Claude Code supports native Windows at the pinned `v2.1.*` range, including its hook execution model. If Claude Code runs better under WSL2 than natively at this version, Phase 2 decides the placement.
+Claude Code on Windows triggers a hook (e.g., PostToolUse).
 
-### 2. Instruction layer
+The settings.json hook command is `wsl.exe -e bash /mnt/c/Users/<user>/harness-engineering/windows/harness/hooks/post-tool-use-semgrep.sh`.
 
-Three CLAUDE.md files participate in the cached prefix.
+WSL2 spawns bash inside the Ubuntu environment, which runs the hook script with full access to Semgrep, jq, and the rest of the Linux tooling.
 
-- Repository root `CLAUDE.md` (build-time, governs work on this repo)
-- `windows/harness/CLAUDE.md` (operational, governs daily Claude Code sessions on Windows)
-- `<TBD-PHASE-0>` if a third file participates
+The script's stdout returns to Claude Code on Windows, which presents findings to the model.
 
-Combined line total stays under 400 per QC.4b. The drift check enforces the cap across all platforms. The CRLF-vs-LF concern matters here: `scripts/drift-check.sh` counts lines, not bytes, so line-ending choice does not change the count. The `.gitattributes` discipline (LF for cached-prefix files) keeps the diff clean.
+## The WSL2 decision
 
-### 3. Tool pool
+The choice to invoke security tooling through WSL2 rather than natively on Windows comes from a survey of the native tool landscape:
 
-Built-in tools, custom tools, MCP-exposed tools.
+Semgrep on Windows native has spotty rule-pack coverage as of build time. Several `p/security-audit` rules either fail to load or behave inconsistently. The Linux build is the reference and is the build that the SecureForge research (R.2.1) measured against.
 
-Default enabled built-ins: `<TBD-PHASE-0>` (record after `/context` shows the loaded tools on Windows).
+shellcheck on Windows is available via Chocolatey, but the bash hook scripts use Linux-isms (jq for JSON parsing, POSIX-compliant test syntax, `/proc` and `/dev` paths in places) that don't translate cleanly.
 
-Windows x86_64 availability of conditionally enabled tools: Mac observed 9 always-loaded + 22 deferred under v2.1.138 (per `mac/ARCHITECTURE.md:47-49`), matching the documented `getAllBaseTools()` surface from Claude_Architecture.md §6.2 (up to 54 tools, 35 conditional). The set is feature-flag dependent and Windows-specific tools may diverge most on Bash-tool variants, shell-sandbox primitives, and POSIX-path-dependent tools. Verify the Windows-loaded set matches at the same Claude Code version before treating Mac's deferred-tool reliance as portable.
+gitleaks on Windows is functional natively, but running it in a different environment than Semgrep creates a configuration split that's prone to drift.
 
-Custom and MCP tools land in Phase 4.
+pre-commit on Windows works for many hook types but has known issues with hooks that shell out to Linux-specific binaries.
 
-### 4. Permission layer
+The alternative (re-implement the hooks in PowerShell or Python) was evaluated and rejected:
 
-The deny-first, ask-by-default permission system from Claude_Architecture.md §5 applies unchanged in concept. Platform-specific deltas in the patterns:
+It would create a divergent codebase from Mac and Jetson, violating AP.3.
 
-- Permission mode default: `default` per Principle 2
-- Auto-mode classifier: `<TBD-PHASE-2>`
-- Deny rules: live in `windows/harness/rules/` (Phase 3 populates; patterns adapt to Windows path conventions)
-- Hook gates: live in `windows/harness/hooks/` (Phase 3 populates; hook script language is `<TBD-PHASE-2>`)
-- MCP server-prefix denies: `<TBD-PHASE-0>`
+It would require re-validating the SecureForge methodology against the new implementation, doubling the validation cost.
 
-Hooks enforce. CLAUDE.md advises. Principle 1 holds across platforms.
+The WSL2 startup overhead (100-300ms per hook invocation cold, less when warm) is acceptable for the workflow.
 
-### 5. Context pipeline
+The cost of the WSL2 decision:
 
-- Compaction: automatic
-- System reminders: used for dynamic content per QC.4b
-- File references: discovered in Phase 1, recorded in `phase-outputs/INVENTORY.md`
-- Context resets: not used by default
-- PreCompact / PostCompact hooks: `<TBD-PHASE-0>`
+A required dependency: users must install WSL2 with a supported distribution. This is documented in `windows/USER_GUIDE.md`.
 
-### 6. Sandbox
+A path-translation step: Windows paths in tool input must be converted to WSL2 paths before the bash scripts process them. Helper functions live in the hook scripts.
 
-The largest known platform divergence from Mac. Windows sandbox primitives differ fundamentally.
+A small per-hook latency overhead.
 
-- Bash sandboxing on Windows: Mac verified Claude Code v2.1.138 exposes no sandbox CLI flag (`claude --help` audit per `mac/ARCHITECTURE.md:88`); the macOS `sandbox-exec` primitive is available but the runtime's documented use of it is not visible. Mac's fallback posture: the permission layer (deny rules + hooks + interactive approval) carries the load per Principle 1. Windows-equivalent primitives include AppContainer, Windows Sandbox, and job objects. Verify what's actually supported on the installed Claude Code version on Windows; confirm the permission-layer-carries-load fallback applies until they are.
-- Filesystem isolation: `<TBD-PHASE-0>`
-- Network egress restrictions: `<TBD-PHASE-0>`
-- AppLocker or WDAC integration: `<TBD-PHASE-0>` (whether configured at all; not the harness's responsibility but informs the threat model)
-- Windows Defender Application Control: `<TBD-PHASE-0>`
-- Exclusion patterns: `<TBD-PHASE-0>`
+A failure mode that doesn't exist on Mac or Jetson: WSL2 can be uninstalled, paused, or have its distribution removed. The session-start hook checks WSL2 health and surfaces issues early.
 
-### 7. MCP integration
+The benefit:
 
-- MCP allowlist: managed in `windows/harness/settings.json` (Phase 4 populates)
-- Default posture: deny all MCP servers not on the allowlist
-- Pre-trust audit habit: same as Mac and Jetson
-- Windows x86_64 availability per MCP server: Mac Phase 4 calibrated minimum was `superpowers@claude-plugins-official` v5.1.0 + `mempalace@mempalace` v3.3.2 in `enabledPlugins`, with `mcpServers` empty (per `mac/ARCHITECTURE.md:97-102`). Superpowers ships pure markdown (highly portable). MemPalace is Python with an Anaconda-backed binary on Mac. Each server adopted in Mac Phase 4 is verified to run on Windows before adoption here. Server-side Windows support varies by maintainer; Go binaries usually portable, Python typically works, npm sometimes hits Windows-specific issues with native modules requiring MSVC build tools.
+Capability parity with Mac and Jetson at the security-tooling level.
 
-### 8. Subagent delegation
+Identical hook script content across all three platforms, modulo the `wsl.exe` wrapper for the Windows invocation context.
 
-Same model as Mac and Jetson. Task tool, worktree isolation, cost-vs-cache subagent model decisions.
+A single SAST rule pack and a single methodology validating against the same tooling across the fleet.
 
-- Worktree isolation: enabled
-- Default subagent model: `<TBD-PHASE-0>`
-- When to spawn: same heuristics as Mac
+## The five layers (Windows variations)
 
-### 9. Persistence
+### Layer 1: Project CLAUDE.md
 
-- Session log location: `<TBD-PHASE-0>` (Claude Code on Windows writes to a path that differs from Mac and Linux; Phase 0 records the actual path)
-- Session log retention: `<TBD-PHASE-0>`
-- Memory tools: Mac Phase 4 adopted MemPalace v3.3.2 alongside Claude Code's native auto-memory (Q4 enabled). MemPalace runs as `mempalace-mcp` Python backed by `/opt/anaconda3/bin/python3` on Mac (per `mac/evaluations/deep-eval.md`). Windows deep-eval question: whether the Python install path works under Windows + WSL2 routing (per Phase 2 placement), and whether the LaunchAgent daily-maintenance pattern (macOS specific) maps to a Windows Scheduled Task equivalent.
-- Compaction interaction: session log persists across compactions
+Identical to Mac in shape and content. The status section pins to the Windows-validated Claude Code range and notes the WSL2 distribution version.
 
-## Quality Contract operationalization
+### Layer 2: settings.json
 
-| QC | Windows implementation |
-|---|---|
-| QC.1 Security | winget version pins (`<TBD-PHASE-0>`). SBOM via `syft` (Phase 3 evaluates Windows x86_64 availability). Secret scan via `detect-secrets` (pre-commit, identical to Mac and Jetson). SAST via `semgrep` (Phase 3 verifies Windows build; semgrep on Windows historically required WSL but recent versions ship native binaries). |
-| QC.2 Tight code | Reviewer subagent in Phase 5 audits scope. Same discipline as Mac and Jetson. |
-| QC.3 Comments | Comment the why. Hook scripts in `windows/harness/hooks/` carry rationale comments. |
-| QC.4a Cache (API/SDK) | Direct Anthropic API use carries explicit `"ttl": "1h"`. Same as Mac and Jetson. Documented in `windows/harness/settings.json.template`. |
-| QC.4b Cache (Claude Code) | CLAUDE.md hierarchy under 400 lines total. `scripts/drift-check.sh` enforces across all platforms. CRLF-vs-LF is a line-ending question, not a line-count question; the drift check is line-ending neutral. |
-| QC.5 Versioning | Claude Code pinned to `<TBD-PHASE-0>`. Re-evaluation trigger: minor bump. Same as Mac and Jetson. |
+Identical to Mac in structure. The hook command paths use `wsl.exe -e bash` wrappers around the bash hook scripts.
 
-## Threat model adaptations for Windows
+Example hook entry:
 
-The threats in `foundation/01-threat-model.md` apply unchanged. Windows-specific notes:
+```json
+{
+  "type": "command",
+  "command": "wsl.exe -e bash /mnt/c/Users/{{USER}}/harness-engineering/windows/harness/hooks/post-tool-use-semgrep.sh",
+  "timeout": 60
+}
+```
 
-- **UAC and Microsoft Defender**: assumed enabled. Disabled UAC or Defender is a host-OS misconfiguration the harness does not defend against.
-- **BitLocker disk encryption**: assumed enabled. The harness's secret-protection posture relies on the host disk being encrypted at rest.
-- **Windows Credential Manager backed by DPAPI**: used for credential storage where applicable. The harness does not write secrets to plain files in the working directory.
-- **AppLocker or WDAC**: if configured, provides a code-execution control layer the harness can rely on for additional defense. If not configured, the harness's deny rules and hook scripts carry the full weight.
-- **Network egress monitoring**: GlassWire or simplewall is the Windows equivalent of Little Snitch and opensnitch. `<TBD-PHASE-0>` (Phase 0 records whether one is installed).
-- **Smart App Control and SmartScreen**: assumed enabled on Windows 11. Provides file-execution and download reputation checks.
-- **WSL2 as a permission boundary**: if Phase 2 elects to run the harness under WSL2, the WSL2 instance is a separate filesystem and process namespace. Threats inside WSL2 do not automatically cross into native Windows, but the WSL2 filesystem is accessible from native Windows by default. The boundary is real but porous; treat it accordingly.
-- **PowerShell execution policy**: `<TBD-PHASE-0>` (record current policy; the harness expects at minimum `RemoteSigned` for hook scripts to execute without bypass flags).
+The path is the WSL2-visible path (`/mnt/c/...`), not the Windows path (`C:\...`).
 
-## Build state
+The `permissions.deny` list adds Windows-specific patterns: `Read(C:\Windows\System32\config\**)`, `Read(C:\Users\*\AppData\Local\Microsoft\Credentials\**)`, and similar Windows-specific sensitive paths.
 
-- Foundation documents: written and committed (Batch 1)
-- Windows section structure: scaffolded (Batch 4)
-- `<TBD-PHASE-0>` blocks: filled after first Phase 0 session on Windows
-- `<NEEDS-WINDOWS-PORT-VALIDATION>` blocks: resolved during Phase 0 verification and Phase 3 implementation
-- Phase 1 through Phase 5: not yet executed on Windows
+### Layer 3: Deterministic rules
 
-Each phase output lands in `phase-outputs/` (build-internal, gitignored). Phase 5 produces the final polished form of this document.
+Same rule files as Mac with Windows-specific path additions:
 
-## Version pins
+`paths.deny` extends with Windows credential stores (`AppData\Roaming\Microsoft\Crypto\`, registry-export files, common Windows secret paths).
 
-Filled by Phase 0. Re-evaluated on every Claude Code minor-version bump.
+`paths.allow` notes the WSL2-vs-Windows path duality.
 
-| Component | Pinned version | Next-evaluation trigger |
-|---|---|---|
-| Claude Code | `<TBD-PHASE-0>` | Minor-version bump |
-| Windows | `<TBD-PHASE-0>` | Feature update release |
-| PowerShell | `<TBD-PHASE-0>` | Major-version release |
-| WSL2 kernel | `<TBD-PHASE-0>` (if used) | Major-version release |
-| Node | `<TBD-PHASE-0>` | LTS major release |
-| Python | `<TBD-PHASE-0>` | Minor-version release |
-| Semgrep | `<TBD-PHASE-0>` | Security advisory or major release |
-| MemPalace | Mac pinned 3.3.2 (Python); Windows native or WSL2 build unverified | Major release if adopted on Windows |
-| Serena | Mac deferred (user-disabled signal); Windows LSP support unverified | Major release if adopted on Windows |
+`commands.deny` extends with Windows-specific patterns: `powershell.exe -EncodedCommand`, `cmd /c reg add HKLM:\...`, similar high-risk patterns.
 
-Additional seeds adopted in Phase 3 or Phase 4 land in this table with their pin and trigger.
+`secrets.patterns` is identical.
+
+### Layer 4: Skills
+
+The `security-review` skill content is identical to Mac. The skill loads in Claude Code on Windows the same way it loads on Mac. The file-type triggers cover the same extensions.
+
+### Layer 5: Hooks and agents
+
+Hook scripts are byte-identical to Mac and Jetson. They are bash. They expect a Linux-like environment (`/tmp`, `/proc` access for some checks, POSIX commands). They run inside WSL2.
+
+The `wsl.exe` invocation is configured in `settings.json.template`, not in the hook scripts themselves. This keeps the hook scripts portable and identical across platforms.
+
+Agents (`security-reviewer.md`, `writer-reviewer.md`) are identical.
+
+One Windows-specific consideration: the `session-start.sh` hook on Windows includes a WSL2 health check (verify the distribution is running, verify Semgrep is available, verify path translation works). The check is appended to the same hook script via a Windows-specific section guarded by an environment check.
+
+## The three-layer security stack (Windows)
+
+Identical composition. Identical content. Different runtime substrate for Layers 2 and 3.
+
+Layer 1: `harness/skills/security-review/`. Content identical. Loaded by Claude Code on Windows.
+
+Layer 2: `harness/hooks/post-tool-use-semgrep.sh`. Script identical. Invoked via `wsl.exe`. Runs inside WSL2 with Linux Semgrep.
+
+Layer 3: `.pre-commit-config.yaml`. Same configuration. Pre-commit runs inside WSL2 (the developer activates the WSL2 environment to run `git commit`, or configures git on the Windows side to invoke pre-commit through WSL2).
+
+The methodology binding (SecureForge), taxonomy binding (sec-context), and Quality Contract binding (QC.1) are identical to Mac and Jetson.
+
+## Cross-platform tool equivalency for Windows
+
+| Capability | Tool on Windows | Same as Mac? | Notes |
+| --- | --- | --- | --- |
+| SAST engine | semgrep (Linux build inside WSL2) | Same engine, Linux build | WSL2 invocation |
+| Secret scanning | gitleaks (Linux build inside WSL2) | Same engine, Linux build | Can run native on Windows but uses WSL2 for consistency |
+| Shell linting | shellcheck (Linux build inside WSL2) | Same engine | WSL2 invocation |
+| JSON tooling | jq (inside WSL2) | Same tool | WSL2 invocation |
+| Python runtime | Python in WSL2 | Different (WSL2 Python, not Windows Python) | Pre-commit runs against WSL2 Python |
+| Package manager | apt inside WSL2 plus Chocolatey for Windows-host needs | Different | Documented in `windows/USER_GUIDE.md` |
+| Pre-commit framework | pre-commit inside WSL2 | Same | Git on Windows configured to invoke through wsl.exe |
+
+## Build sequence on Windows
+
+Same six-phase sequence as Mac and Jetson.
+
+Phase 0, Phase 1, Phase 2 are fully ported and ready to run.
+
+Phase 3, Phase 4, Phase 5 are scaffolded with "needs validation when ported" markers. The validation work for Windows is more involved than for Jetson because of the WSL2 indirection.
+
+## What this architecture does not address
+
+Cross-platform development from Mac or Jetson to Windows. The harness assumes the developer is at the Windows machine.
+
+PowerShell-based hooks. The harness uses bash via WSL2 for parity. PowerShell variants are out of scope.
+
+Windows-specific anti-pattern coverage in the security-review skill (e.g., Windows API-specific buffer overflows, Windows credential API misuse). These could be added as Windows-specific skill content if Phase 4 surfaces specific projects that need them. Out of scope for the initial scaffolded build.
+
+Multi-WSL2-distribution setups. The harness assumes one default WSL2 distribution. Users with multiple distributions configure the default explicitly.
+
+These omissions are deliberate. They keep the Windows section focused on the parity the harness actually needs.

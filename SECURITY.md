@@ -1,50 +1,41 @@
 # Security Policy
 
-This repo is a public reference for a personal Claude Code harness. It contains configuration, prompts, and rationale documents, not a runtime service. The vulnerability surface is correspondingly narrow, and so is this policy.
+This is a reference repository, not a production service. The artifacts describe how a Claude Code harness was built and reasoned about. Even so, security issues in the patterns, configurations, or example code matter, because people read this repo and adapt from it.
 
-## Scope
+## Reporting a vulnerability
 
-In scope:
+If you find a security issue in this repository's configuration, hooks, scripts, or example code, report it via one of the following channels.
 
-- Hook scripts, deny rules, and sandbox configuration in `mac/`, `jetson/`, and `windows/` that could mishandle untrusted input.
-- The drift-check script and any helper scripts under `scripts/`.
-- Foundation documents (`foundation/`) that prescribe security-critical decisions; factual errors that would mislead an implementer count as security issues.
-- Reference to CVE classes (CVE-2025-59536, CVE-2026-21852, CVE-2025-54794, CVE-2025-54795) in the threat model that have become inaccurate or stale.
+Email: security at rockcyber dot com. PGP key fingerprint listed at https://rockcyber.com/security.
 
-Out of scope:
+GitHub private security advisory: open one at https://github.com/rocklambros/harness-engineering/security/advisories/new.
 
-- Claude Code itself. Report Claude Code vulnerabilities to Anthropic directly. This repo is not a runtime and does not modify Claude Code.
-- Third-party seeds referenced in the seed evaluation documents. Report those upstream.
-- Cosmetic issues, typos, and style preferences. Open a normal issue.
-- Speculative threats not grounded in a specific behavior of code or documentation in this repo.
+I'll acknowledge receipt within 72 hours and aim to confirm or dispute the issue within 7 days. If the issue is real, I'll work with you on a remediation timeline and credit you in the fix commit unless you ask to remain anonymous.
 
-## Reporting
+## What's in scope
 
-Email `security@rockcyber.com` with:
+Misconfigurations in `settings.json.template` that would weaken trust boundaries if copied verbatim.
 
-- A summary of the issue in one sentence.
-- The specific file, line, or document section affected.
-- Why it is a security issue. The threat model in `foundation/01-threat-model.md` is the reference frame.
-- A reproduction, if applicable.
+Hook scripts in `*/harness/hooks/` that could be bypassed, exploited, or fail silently in ways that would invalidate the security model.
 
-Do not file a public GitHub issue for in-scope vulnerabilities until a fix has landed. For out-of-scope or ambiguous issues, a regular issue is fine.
+Example code in `prompts/` or `evaluations/` that contains exploitable patterns even when the surrounding text frames them as guidance.
 
-## Response
+Documentation that misrepresents the security properties of upstream tools (Claude Code, Semgrep, gitleaks, the SecureForge methodology, the sec-context taxonomy) in ways that would mislead a reader into adopting an unsafe pattern.
 
-Triage response within five business days of receipt. The five-day target reflects this being a personal project, not a commercial service. If the issue is genuinely time-critical, mark the email subject `[security][urgent]` and the response window tightens.
+## What's out of scope
 
-After triage, expect one of three outcomes:
+Issues in the upstream tools themselves. Report those to their respective maintainers. This repo documents how those tools were composed, not their internals.
 
-1. **Accepted, fix planned.** A commit lands addressing the issue, the commit message follows the project template, and the reporter is acknowledged in the commit if they want to be.
-2. **Accepted, won't fix.** The issue is real but the cost of fixing exceeds the cost of accepting. The reasoning lands in `foundation/01-threat-model.md` or a similar document so the residual risk is on the record.
-3. **Rejected.** The issue is out of scope or not actually a vulnerability. The response explains why.
+Theoretical attacks that require the reader to ignore explicit warnings in the relevant `ARCHITECTURE.md` or Quality Contract.
 
-Coordinated disclosure on accepted issues: 30 days from the first response to public disclosure unless the reporter and I agree to a different window.
+Issues in the three research documents in `research/`. Those are source materials, not authored by me.
 
-## Bounty
+## Disclosure timeline
 
-There is no bounty program. This is a personal project. Acknowledgment in the commit message and in this section's hall-of-fame block (when one exists) is the available recognition.
+I prefer coordinated disclosure with a 90-day window from acknowledgment to public disclosure, adjusted as needed for the severity and complexity of the fix. If you have a different expectation, say so in your initial report.
 
-## Reference
+## Cryptographic verification
 
-This policy is the minimum form of NIST SP 800-218 v1.1 practice RV.1.3 (Establish a vulnerability disclosure program). The broader threat model and harness security posture live in `foundation/01-threat-model.md` and `foundation/00-quality-contract.md`.
+Releases (when they exist) are signed. The public key for tag signature verification is published at https://rockcyber.com/security.
+
+Build provenance attestations are generated through the SLSA Level 3 pipeline configured in `.github/workflows/` once that pipeline lands. Until then, treat unsigned commits as advisory artifacts and verify against the documented reasoning in the commit message body.
