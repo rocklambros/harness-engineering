@@ -1,0 +1,41 @@
+# Path patterns that hooks and settings block. One pattern per line.
+# Comments allowed with leading #.
+# Patterns are glob-style (matched against absolute paths after expansion).
+
+# Credentials and keys
+~/.ssh/
+~/.aws/credentials
+~/.aws/config
+~/.config/gh/hosts.yml
+~/.config/gcloud/credentials.db
+~/.kube/config
+~/.npmrc
+~/.pypirc
+~/.netrc
+~/.gnupg/
+
+# System secrets
+/etc/shadow
+/etc/sudoers
+/etc/sudoers.d/
+
+# Project-level secrets
+.env
+.env.local
+.env.production
+.env.*.local
+secrets/
+credentials/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# History files that may contain command-line credentials
+~/.bash_history
+~/.zsh_history
+~/.psql_history
+
+# Jetson/Tegra-specific sensitive paths (Phase 2 A.4, A.8)
+/proc/nvtegra/*
+~/.nvidia-jetson/

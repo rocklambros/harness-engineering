@@ -1,4 +1,120 @@
 {
-  "_comment_status": "SCAFFOLDED. Phase 3 produces the validated Jetson settings template. Do not adopt into a project until validated. See jetson/prompts/phase-3-deterministic-layer.md.",
-  "_comment_reference": "Use mac/harness/settings.json.template as the structural reference. Jetson differences are documented in jetson/ARCHITECTURE.md."
+  "_comment_top": "Claude Code settings template for the Jetson harness. Copy to .claude/settings.json in any project adopting the harness. Replace {{REPO_ROOT}} with the absolute path to the project root before use. Comments use _comment_* keys because JSON does not support inline comments.",
+
+  "_comment_permissions": "Permission mode defaults to default for write phases. Override to plan for discovery-only sessions. Per AP.1, hooks below provide deterministic enforcement; permission mode is the model-visible scope.",
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [
+      "Read(./**)",
+      "Write(./**)",
+      "Edit(./**)",
+      "Bash(./scripts/**)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(rg:*)",
+      "Bash(fd:*)",
+      "Bash(jq:*)",
+      "Bash(shellcheck:*)",
+      "Bash(ruff check:*)",
+      "Bash(ruff format:*)",
+      "Bash(pre-commit run:*)",
+      "Bash(semgrep:*)",
+      "Bash(gitleaks:*)"
+    ],
+    "deny": [
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/credentials)",
+      "Read(~/.aws/config)",
+      "Read(/etc/shadow)",
+      "Read(/etc/passwd)",
+      "Read(~/.config/gh/**)",
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(secrets/**)",
+      "Read(/proc/nvtegra/*)",
+      "Read(~/.nvidia-jetson/**)",
+      "Bash(curl *| sh)",
+      "Bash(curl *| bash)",
+      "Bash(wget *| sh)",
+      "Bash(wget *| bash)",
+      "Bash(rm -rf /:*)",
+      "Bash(rm -rf ~/:*)",
+      "Bash(rm -rf $HOME:*)",
+      "Bash(sudo *)",
+      "Bash(nvpmodel -m:*)"
+    ]
+  },
+
+  "_comment_hooks": "Hooks register against Claude Code events. PostToolUse on Write and Edit fires the commit-time Semgrep hook (the SecureForge Appendix C pattern, R.2.1). Hooks fail closed per AP.8.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{REPO_ROOT}}/harness/hooks/post-tool-use-semgrep.sh",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{REPO_ROOT}}/harness/hooks/pre-tool-use-shell-audit.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{REPO_ROOT}}/harness/hooks/session-start.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{REPO_ROOT}}/harness/hooks/pre-compact-preserve.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+
+  "_comment_mcp": "MCP servers are intentionally not listed here. Per AP.7 (lazy load), servers load on demand through tool search rather than at session start.",
+  "mcpServers": {},
+
+  "_comment_env": "Telemetry controls. Note: setting telemetry off kills the 1h cache TTL silently per QC.4a. Keep telemetry on unless you have an explicit reason and accept the cache cost.",
+  "env": {
+    "DISABLE_TELEMETRY": "0",
+    "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "0"
+  },
+
+  "_comment_status_line": "Status line surfaces drift-check result and hook log size for visibility. Update path if your harness install location differs.",
+  "statusLine": {
+    "type": "command",
+    "command": "{{REPO_ROOT}}/harness/hooks/status-line.sh"
+  },
+
+  "_comment_version_pin": "Record the Claude Code minor-version range this harness is validated against. Bump triggers QC.5 re-evaluation.",
+  "_validated_claude_code_range": "2.1.x",
+
+  "_comment_jetson": "Jetson-specific deny patterns: /proc/nvtegra/*, ~/.nvidia-jetson/, nvpmodel -m (state-changing). Read-only queries (nvpmodel -q) are allowed per Phase 2 A.4. jetson_clocks is handled through advisory guidance in CLAUDE.md rather than a deny pattern because the prefix-matching Bash(jetson_clocks:*) cannot distinguish the bare invocation (dangerous) from --show (safe)."
 }

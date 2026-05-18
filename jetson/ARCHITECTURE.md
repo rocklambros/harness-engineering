@@ -24,7 +24,7 @@ CUDA/cuDNN are present and may be used by the user's projects. The harness does 
 
 ### Layer 1: Project CLAUDE.md
 
-Identical to Mac in shape. The status section pins to the Jetson-specific JetPack version (6.x) and the validated Claude Code minor-version range. The "operational" section notes that the working directory is `/home/jetson/` (or the equivalent user home on the Jetson), not `/Users/klambros/`.
+Identical to Mac in shape. The status section pins to the Jetson-specific JetPack version (R36 release 5.0) and the validated Claude Code minor-version range (v2.1.x). The "operational" section notes that the working directory is `$HOME/github_projects/harness-engineering/` (the user's home directory on the Jetson), not `/Users/klambros/`.
 
 Source: `harness/CLAUDE.md` (scaffolded; identical content to Mac with the path and platform notes adjusted).
 
@@ -36,7 +36,7 @@ The hook script paths point to bash scripts in `harness/hooks/`. The bash interp
 
 The `_validated_claude_code_range` field tracks the Jetson-specific validated range. May lag the Mac range if Claude Code releases don't immediately support aarch64.
 
-The `permissions.deny` list adds Jetson-specific patterns: `Read(/etc/nvpmodel.conf)`, `Read(/proc/nvtegra/*)`, and similar Tegra-specific sensitive paths. These are not on Mac.
+The `permissions.deny` list adds Jetson-specific patterns for Tegra-specific sensitive paths (`/proc/nvtegra/*`, `~/.nvidia-jetson/`). These are not on Mac.
 
 ### Layer 3: Deterministic rules
 
@@ -44,7 +44,7 @@ Same rule files as Mac with Jetson-specific additions:
 
 `paths.deny` includes Tegra-specific sensitive paths (`/etc/nvpmodel.conf`, `~/.nvidia-jetson/`).
 
-`commands.deny` includes Jetson-specific dangerous commands (`nvpmodel -m 0` without user confirmation, `jetson_clocks` without rationale).
+`commands.deny` includes Jetson-specific rules: read-only queries (`nvpmodel -q`, `jetson_clocks --show`) are allowed, state-changing invocations (`nvpmodel -m`, bare `jetson_clocks`) are blocked. Decision recorded in Phase 2 (A.4).
 
 `secrets.patterns` is identical (the patterns are project-specific, not platform-specific).
 
@@ -58,7 +58,7 @@ Other skills may emerge from Phase 4 discovery on Jetson (e.g., CUDA-specific gu
 
 The hook scripts are byte-identical to Mac. They use `bash` with `set -euo pipefail` semantics that work the same on both platforms.
 
-One Jetson-specific consideration: the JetPack image's Python may be older than the Mac Homebrew Python. The pinned Semgrep version must be compatible with the JetPack Python. Phase 1 verifies this. If incompatible, the hook script can use a pyenv or virtualenv to invoke a compatible Semgrep; the choice is recorded during Phase 2.
+Python environment on this Jetson: Anaconda Python 3.12.2 is the default `python3` on PATH, system JetPack Python is 3.10.12 at `/usr/bin/python3.10`. Semgrep 1.163.0 is installed in both environments (Phase 2, A.1). Hook scripts invoke `semgrep` via PATH, which resolves to the conda base environment. Python hooks (`PreToolUse-*.py`) run under conda Python 3.12.
 
 The agents (`security-reviewer.md`, `writer-reviewer.md`) are identical to Mac.
 
@@ -78,19 +78,19 @@ The methodology binding (SecureForge Appendix C, R.2.1) is identical. The taxono
 
 | Capability | Tool on Jetson | Same as Mac? | Notes |
 | --- | --- | --- | --- |
-| SAST engine | semgrep (pip install on JetPack Python) | Same package, ARM64 build | Verify on hardware |
-| Secret scanning | gitleaks (apt or download aarch64 binary) | Same tool, ARM64 build | Verify on hardware |
-| Shell linting | shellcheck (apt install) | Same tool | Native aarch64 build available |
-| JSON tooling | jq (apt install) | Same tool | Native aarch64 build available |
-| Python runtime | JetPack Python 3.10+ | Different (Homebrew on Mac) | Pin Semgrep version compatible with both |
-| Package manager | apt + pip | Different (Homebrew on Mac) | Document install commands per platform |
-| Pre-commit framework | pre-commit (pip install) | Same | Identical config in `.pre-commit-config.yaml` |
+| SAST engine | semgrep 1.163.0 (pip, both conda and system Python) | Same package, ARM64 build | Phase 2 A.1 |
+| Secret scanning | gitleaks v8.21.2 (binary at /usr/local/bin/) | Same tool, ARM64 build | Phase 2 A.2 |
+| Shell linting | shellcheck 0.8.0 (apt) + 0.10.0 (pre-commit managed) | Same tool, version gap documented | Phase 2 A.3 |
+| JSON tooling | jq 1.6 (apt) | Same tool | Installed |
+| Python runtime | Anaconda 3.12.2 (default) + system 3.10.12 | Different (Homebrew on Mac) | Phase 2 A.1 |
+| Package manager | apt + pip + conda | Different (Homebrew on Mac) | Phase 2 A.1/A.2/A.3 |
+| Pre-commit framework | pre-commit (pip into conda base) | Same | Phase 2 A.1 |
 
 ## Build sequence on Jetson
 
 Same six-phase sequence as Mac. Phase boundaries map to the same Quality Contract properties and threat IDs.
 
-Phase 0, Phase 1, Phase 2 are fully ported and ready to run. Outputs land in `phase-outputs/` (same directory structure as Mac).
+Phase 0, Phase 1, Phase 2 are complete on this Jetson (May 18, 2026). Outputs in `phase-outputs/`. Phase 2 decisions are recorded in `phase-outputs/ANSWERS.md`.
 
 Phase 3, Phase 4, Phase 5 are scaffolded with "needs validation when ported" markers. The validation work involves:
 
