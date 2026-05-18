@@ -1,43 +1,54 @@
 # Jetson section
 
-The Jetson AGX Orin build of the harness. ARM64 Linux on NVIDIA Jetson, running JetPack-based Ubuntu. Claude Code running from the working directory recorded in `ARCHITECTURE.md`.
+The Jetson AGX Orin build of the harness. ARM64 Linux on NVIDIA Jetson, running JetPack R36 (release 5.0) on Ubuntu 22.04.5 LTS. Claude Code running from the working directory recorded in `ARCHITECTURE.md`.
 
-This section is scaffolded, not validated. Foundation, Phase 0, Phase 1, and Phase 2 prompts are written and ready to run. Phase 3, Phase 4, and Phase 5 prompts are scaffolded with `<NEEDS-JETSON-PORT-VALIDATION>` markers where Jetson-specific behavior must be confirmed before any Mac-validated pattern is treated as portable. When Rock executes the Jetson build, validation findings replace the markers and the section graduates from scaffolded to validated.
+This section is validated. All six phases have been executed on Jetson AGX Orin hardware. The build reproduces the Mac reference harness with four documented platform divergences in the hook scripts. All enforcement surfaces pass end-to-end integration testing.
 
-The structural decision is deliberate. Capabilities are identical across the three platforms per locked decision 3 in `CHECKPOINT.md`. Equivalence is asserted on validated grounds for Mac and on documented expectations for Jetson and Windows. The expectations are tracked in writing so the gap between scaffolded and validated is auditable.
+The structural decision is deliberate. Capabilities are identical across the three platforms per locked decision 3 in `CHECKPOINT.md`. Equivalence is asserted on validated grounds for both Mac and Jetson. Windows remains scaffolded pending hardware validation.
+
+## Build status
+
+| Phase | Status | Validation date |
+| --- | --- | --- |
+| Phase 0: Goals | Validated | May 18, 2026 |
+| Phase 1: Discovery | Validated | May 18, 2026 |
+| Phase 2: Architecture | Validated | May 18, 2026 |
+| Phase 3: Deterministic layer | Validated | May 18, 2026 |
+| Phase 4: Extension layer | Validated | May 18, 2026 |
+| Phase 5: Wire and document | Validated | May 18, 2026 |
+
+## Guides
+
+[`USER_GUIDE.md`](USER_GUIDE.md) is the quickstart and daily-use guide. Start here if you want to adopt the harness on your own Jetson project.
+
+[`HARNESS_GUIDE.md`](HARNESS_GUIDE.md) is the technical reference. Covers the five layers, the three-layer security stack, hook event coverage, and Jetson-specific considerations.
 
 ## What's in here
 
-`ARCHITECTURE.md` documents the Jetson harness target. Filled draft with two kinds of unresolved blocks: `<TBD-PHASE-0>` for platform-specific values Phase 0 records when the build runs, and `<NEEDS-JETSON-PORT-VALIDATION>` for assertions ported from the Mac validation that must be verified on Jetson before being treated as fact.
+`ARCHITECTURE.md` documents the Jetson harness design. Platform-specific values were filled during Phase 0 and Phase 2. All validation markers have been resolved.
 
-`prompts/` holds the seven phase prompts. Phase 0 through Phase 2 carry the same standard header, scope discipline, and verification rigor as Mac. Phase 3 through Phase 5 carry scaffold-grade content: the structure is right, the deliverables are named, the verification commands work, but the Jetson-specific details (which sandbox mechanism Claude Code v2.1.x supports on ARM64 Linux, which SAST tools are available, which MCP servers run cleanly under JetPack) need validation when Rock ports the build.
+`prompts/` holds the seven phase prompts that produced this build. Each is a self-contained Claude Code instruction referencing the foundation docs and the Jetson `ARCHITECTURE.md`.
 
-`harness/` holds the operational artifacts. `harness/CLAUDE.md` is the daily-driver instruction file for Jetson sessions. `harness/settings.json.template` is the structural skeleton; Phase 0 and Phase 3 fill platform-specific values.
+`harness/` holds the operational artifacts. `harness/CLAUDE.md` is the daily-driver instruction file for Jetson sessions. `harness/settings.json.template` is the Claude Code configuration with Jetson-specific deny entries. `harness/hooks/` contains four bash hooks and seven Python hooks. `harness/skills/security-review/` is fully populated with ten pattern files. `harness/agents/` has four agent definitions.
 
-`evaluations/` holds the seed evaluation worksheets. The pre-filter table is pre-populated with the same candidate set as Mac. The architecture-support column changes per candidate based on ARM64 Linux availability.
+`scripts/` holds the install script (`install-harness-tools.sh`), the integration test (`integration-test.sh`), and the drift check (`drift-check.sh`).
 
-`scripts/` is reserved for Jetson-platform-specific scripts that come out of Phase 3 or Phase 5.
+`phase-outputs/` holds the validation documents from each phase.
+
+`evaluations/` holds the seed evaluation worksheets.
 
 ## What's different from Mac
 
-The harness's nine components and the Quality Contract apply unchanged. The platform-specific deltas land in `ARCHITECTURE.md`. Summary:
+The harness components and the Quality Contract apply unchanged. The platform-specific deltas are documented in `ARCHITECTURE.md` and in the `HARNESS_GUIDE.md` divergence table. Summary:
 
-- Operating system: Ubuntu on ARM64 (JetPack-based), not macOS on Apple Silicon. Different shell defaults, different package manager (apt rather than Homebrew), different credential store (GNOME keyring or equivalent rather than Keychain), different sandbox primitives (AppArmor or SELinux, depending on distribution, rather than macOS sandbox-exec).
-- Hardware acceleration: the Jetson has CUDA-capable GPU on-board. The harness does not depend on this, but local inference is an option in Phase 4 that Mac does not have at the same scale.
-- Network egress monitoring: `opensnitch` on Linux is the equivalent of Little Snitch on Mac.
-- Disk encryption: LUKS, not FileVault.
-- System integrity: relies on Linux DAC and optional MAC layers; no SIP equivalent.
+Operating system: Ubuntu 22.04 on ARM64 (JetPack R36), not macOS on Apple Silicon. Different package manager (apt rather than Homebrew), different credential store, different sandbox primitives.
 
-The threat model in `foundation/01-threat-model.md` is platform-agnostic. The mitigations in `harness/hooks/` and `harness/rules/` are platform-specific in their commands but identical in their intent.
+Hardware acceleration: the Jetson has a CUDA-capable GPU on-board. The harness does not depend on CUDA, but Semgrep scans `.cu` and `.cuh` files.
+
+Four hook scripts have platform-specific changes (GNU stat syntax, awk version parsing fix, apt error messages, CUDA extension support). Seven Python hooks are byte-identical to Mac.
 
 ## How to use this section
 
-If you are reading this repo as a reference for building your own harness on Jetson or another ARM64 Linux target, the path is the same as the Mac section: foundation first, then this section's `ARCHITECTURE.md`, then the seven prompts in order. The `<NEEDS-JETSON-PORT-VALIDATION>` markers are honest signals about which assertions have not yet been confirmed on this platform. Treat them as live questions, not as finished documentation.
+If you are reading this repo as a reference for building your own harness on Jetson or another ARM64 Linux target, start with the `USER_GUIDE.md` for adoption or `HARNESS_GUIDE.md` for the technical reference. The foundation docs in `foundation/` provide the design rationale.
 
-If you are running these prompts against your own Jetson, the Phase 0 prompt is the entry point. Run it first. Replace the `<TBD-PHASE-0>` blocks with the actual environment baseline. Then Phase 1 inventories your machine, Phase 2 makes the architecture decisions, and Phase 3 onward delivers the harness components with full validation. The build sequence is identical to Mac; the inputs and outputs are Jetson-specific.
-
-## Status
-
-Scaffolded. Phase 0 through Phase 2 ready to execute. Phase 3 through Phase 5 carry validation markers that resolve when the build runs on the actual hardware.
-
-Build date: pending. The first execution of Phase 0 against a live Jetson stamps the section with the date and the validation results.
+If you want to reproduce the build from scratch, run the phase prompts in `prompts/` in order, starting with Phase 0.

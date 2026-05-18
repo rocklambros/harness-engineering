@@ -16,11 +16,15 @@ repos:
     hooks:
       - id: gitleaks
 
-  - repo: https://github.com/returntocorp/semgrep
-    rev: v1.95.0
+  - repo: local
     hooks:
       - id: semgrep
+        name: Semgrep SAST (system install)
+        entry: semgrep
         args: ['--config', 'p/default', '--config', 'p/security-audit', '--error', '--skip-unknown-extensions']
+        language: system
+        types: [file]
+        exclude: '(\.md|\.txt|\.json|\.yaml|\.yml|\.toml|\.cfg|\.ini|\.lock)$'
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.10.0.1

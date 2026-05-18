@@ -38,6 +38,22 @@ Still open: the Jetson and Windows `security-review` skills remain scaffolds wit
 
 ---
 
+## May 18, 2026: Jetson AGX Orin build validated
+
+The Jetson section graduated from scaffold to validated today. All six phases ran on the actual hardware: an NVIDIA Jetson AGX Orin running JetPack R36 (release 5.0), Ubuntu 22.04.5 LTS, aarch64, with 64GB RAM and a 3.6TB NVMe.
+
+Phase 1 inventoried the platform and found four blockers: Semgrep, gitleaks, shellcheck, and pre-commit were all missing from the Jetson. The install-harness-tools.sh script resolved these. Phase 2 made nine architecture decisions, the most consequential being the dual-environment Semgrep install (conda base Python 3.12 and system Python 3.10 both at version 1.163.0) and gitleaks at /usr/local/bin/ instead of ~/.local/bin/. Phase 3 built the deterministic layer and discovered four portability issues in the Mac hooks. The session-start.sh awk version parsing bug (`$NF` grabs "Code)" from the `claude --version` output "2.1.143 (Claude Code)") exists in the Mac version too. The pre-compact-preserve.sh `stat` syntax difference (GNU `-c '%Y %n'` vs macOS `-f '%m %N'`) is the only purely functional divergence between the two platform copies. Phase 4 copied the security-review skill and agents byte-identical from Mac and validated that Semgrep rule packs (p/default: 1059 rules, p/security-audit: 225 rules) resolve identically on aarch64. Phase 5 produced the integration test (21 checks, all passing), the Jetson-specific USER_GUIDE and HARNESS_GUIDE, and the SBOM.
+
+Open questions from this build:
+
+The Mac session-start.sh version parsing bug should be fixed upstream. The Jetson copy has the fix. The Mac copy still uses `awk '{print $NF}'`.
+
+CUDA-specific anti-patterns in the security-review skill remain out of scope per Phase 0. The PostToolUse hook scans `.cu` and `.cuh` files, but the skill does not load CUDA-specific guidance. This is a tracked follow-up if CUDA security patterns become a priority.
+
+The `jetson_clocks` advisory gap remains. The command cannot be blocked by the settings.json deny list because prefix-matching cannot distinguish bare `jetson_clocks` (unsafe) from `jetson_clocks --show` (safe). CLAUDE.md advisory guidance is the current mitigation.
+
+---
+
 ## Template for future entries
 
 ```

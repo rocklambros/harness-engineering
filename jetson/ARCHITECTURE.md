@@ -90,17 +90,7 @@ The methodology binding (SecureForge Appendix C, R.2.1) is identical. The taxono
 
 Same six-phase sequence as Mac. Phase boundaries map to the same Quality Contract properties and threat IDs.
 
-Phase 0, Phase 1, Phase 2 are complete on this Jetson (May 18, 2026). Outputs in `phase-outputs/`. Phase 2 decisions are recorded in `phase-outputs/ANSWERS.md`.
-
-Phase 3, Phase 4, Phase 5 are scaffolded with "needs validation when ported" markers. The validation work involves:
-
-Running each phase prompt against the actual Jetson hardware.
-
-Verifying the deliverables produced match the Mac equivalents in structure and content.
-
-Documenting any tool-availability or path differences in this `ARCHITECTURE.md` and the relevant phase prompt.
-
-Updating the build status in `README.md` from "Scaffolded" to "Validated."
+All six phases are complete and validated on this Jetson (May 18, 2026). Outputs in `phase-outputs/`. Phase 2 decisions are recorded in `phase-outputs/ANSWERS.md`. Phase 3 through Phase 5 validation documents record all hardware-specific findings and platform divergences.
 
 ## What this architecture explicitly does not address
 
