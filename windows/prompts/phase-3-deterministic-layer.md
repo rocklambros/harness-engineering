@@ -106,6 +106,32 @@ Same as Mac with an appended WSL2 health-check section. The section verifies the
 
 Same as Mac.
 
+### 7a. `windows/harness/hooks/` Python hooks (byte-identical, deployed via WSL2)
+
+The Python hooks ship byte-identical from `mac/harness/hooks/` and execute under
+the WSL2 Python interpreter. No path-translation helper is needed because they
+read the payload from stdin and operate on the `cwd` and `file_path` already
+present in it. The set:
+
+`PreToolUse-external-write-gate.py`, `PreToolUse-cached-prefix-write-gate.py`,
+`PreToolUse-bash-cap-subcommands.py`, `PreToolUse-supply-chain-bash-checks.py`,
+`PreToolUse-git-push-force-ask.py`, `SessionStart-audit-claude-config.py`,
+`Stop-prune-session-logs.py`.
+
+`PreToolUse-external-write-gate.py` includes a managed-store exemption that the
+Windows landing inherits unchanged. The exemption class today is
+`~/.claude/projects/*/memory/` (auto-memory) and `~/.claude/plans/` (plan
+files). Everything else under `~/.claude/` stays gated. The class rationale is
+in the hook's module header (`Exemption:` block). Without this exemption, every
+auto-memory and plan-file write trips a permission prompt that survives bypass
+mode (hooks run after the permission engine by design), which trains reflexive
+approval and erodes the gate's signal for writes that matter.
+
+Validation: from inside WSL2, run the verification matrix from the hook header's
+`Verify` blocks against the deployed copy at `~/.claude/hooks/`. All cases must
+pass. Drift check (`scripts/drift-check.sh`) must report "deployed hooks match
+tracked source".
+
 ### 8. Verification and validation
 
 ```bash
