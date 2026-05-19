@@ -132,6 +132,39 @@ Validation: from inside WSL2, run the verification matrix from the hook header's
 pass. Drift check (`scripts/drift-check.sh`) must report "deployed hooks match
 tracked source".
 
+### 7b. `windows/harness/hooks/` MemPalace protocol hooks (byte-identical, bash)
+
+Two bash hooks that wire the MemPalace memory protocol into the deterministic
+layer:
+
+- `SessionStart-mempalace-protocol.sh` injects a slim protocol reminder as
+  `additionalContext` on every SessionStart. The reminder tells the model to
+  query MemPalace before answering about past context, escalate structured
+  cross-session decisions to `mempalace_kg_add` + `mempalace_add_drawer`, and
+  write a session diary before stopping. Payload is small to respect QC.4b
+  prefix discipline (do not inject the full `mempalace_status` response).
+
+- `Stop-mempalace-diary-reminder.sh` blocks the first Stop per session with a
+  system-reminder pointing at `mempalace_diary_write`, tracked via a `/tmp`
+  marker keyed on `session_id`. The second Stop (after the diary write)
+  passes through cleanly. Falls through without wedging if `session_id` is
+  absent from the payload.
+
+Threat: per-session amnesia. Without these hooks the model defaults to
+auto-memory and silently never escalates to MemPalace for structured
+cross-session knowledge. Observed 2026-05-19: an entire session passed with
+zero deliberate MemPalace calls until the user surfaced the gap.
+
+Both hooks are byte-identical to `mac/harness/hooks/` and run under bash inside
+WSL2. No path-translation helper needed. The MemPalace plugin must be installed
+in the Claude Code instance for the protocol calls to resolve; the hooks
+themselves work regardless and only inject text.
+
+Validation: run each hook against a synthetic JSON payload from inside WSL2 and
+confirm SessionStart emits the `hookSpecificOutput.additionalContext` JSON and
+Stop emits `decision:block` on first call, exits 0 on second call with the same
+session_id.
+
 ### 8. Verification and validation
 
 ```bash

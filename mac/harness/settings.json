@@ -96,6 +96,11 @@
           {
             "type": "command",
             "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/SessionStart-audit-claude-config.py"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/SessionStart-mempalace-protocol.sh",
+            "_documentation": "Injects a slim MemPalace protocol reminder as additionalContext so the model escalates structured cross-session decisions (architecture, security, design) to MemPalace via mempalace_kg_add and mempalace_add_drawer instead of defaulting to auto-memory. Slim payload to respect QC.4b prefix discipline."
           }
         ]
       }
@@ -106,6 +111,11 @@
           {
             "type": "command",
             "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/Stop-prune-session-logs.py"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/Stop-mempalace-diary-reminder.sh",
+            "_documentation": "Blocks the first Stop per session with a system-reminder pointing at mempalace_diary_write. Tracks via a /tmp marker keyed on session_id so the second Stop (after the diary write) passes cleanly. Falls through without wedging if session_id is absent from the payload."
           }
         ]
       }
