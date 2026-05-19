@@ -106,6 +106,65 @@ Same as Mac with an appended WSL2 health-check section. The section verifies the
 
 Same as Mac.
 
+### 7a. `windows/harness/hooks/` Python hooks (byte-identical, deployed via WSL2)
+
+The Python hooks ship byte-identical from `mac/harness/hooks/` and execute under
+the WSL2 Python interpreter. No path-translation helper is needed because they
+read the payload from stdin and operate on the `cwd` and `file_path` already
+present in it. The set:
+
+`PreToolUse-external-write-gate.py`, `PreToolUse-cached-prefix-write-gate.py`,
+`PreToolUse-bash-cap-subcommands.py`, `PreToolUse-supply-chain-bash-checks.py`,
+`PreToolUse-git-push-force-ask.py`, `SessionStart-audit-claude-config.py`,
+`Stop-prune-session-logs.py`.
+
+`PreToolUse-external-write-gate.py` includes a managed-store exemption that the
+Windows landing inherits unchanged. The exemption class today is
+`~/.claude/projects/*/memory/` (auto-memory) and `~/.claude/plans/` (plan
+files). Everything else under `~/.claude/` stays gated. The class rationale is
+in the hook's module header (`Exemption:` block). Without this exemption, every
+auto-memory and plan-file write trips a permission prompt that survives bypass
+mode (hooks run after the permission engine by design), which trains reflexive
+approval and erodes the gate's signal for writes that matter.
+
+Validation: from inside WSL2, run the verification matrix from the hook header's
+`Verify` blocks against the deployed copy at `~/.claude/hooks/`. All cases must
+pass. Drift check (`scripts/drift-check.sh`) must report "deployed hooks match
+tracked source".
+
+### 7b. `windows/harness/hooks/` MemPalace protocol hooks (byte-identical, bash)
+
+Two bash hooks that wire the MemPalace memory protocol into the deterministic
+layer:
+
+- `SessionStart-mempalace-protocol.sh` injects a slim protocol reminder as
+  `additionalContext` on every SessionStart. The reminder tells the model to
+  query MemPalace before answering about past context, escalate structured
+  cross-session decisions to `mempalace_kg_add` + `mempalace_add_drawer`, and
+  write a session diary before stopping. Payload is small to respect QC.4b
+  prefix discipline (do not inject the full `mempalace_status` response).
+
+- `Stop-mempalace-diary-reminder.sh` blocks the first Stop per session with a
+  system-reminder pointing at `mempalace_diary_write`, tracked via a `/tmp`
+  marker keyed on `session_id`. The second Stop (after the diary write)
+  passes through cleanly. Falls through without wedging if `session_id` is
+  absent from the payload.
+
+Threat: per-session amnesia. Without these hooks the model defaults to
+auto-memory and silently never escalates to MemPalace for structured
+cross-session knowledge. Observed 2026-05-19: an entire session passed with
+zero deliberate MemPalace calls until the user surfaced the gap.
+
+Both hooks are byte-identical to `mac/harness/hooks/` and run under bash inside
+WSL2. No path-translation helper needed. The MemPalace plugin must be installed
+in the Claude Code instance for the protocol calls to resolve; the hooks
+themselves work regardless and only inject text.
+
+Validation: run each hook against a synthetic JSON payload from inside WSL2 and
+confirm SessionStart emits the `hookSpecificOutput.additionalContext` JSON and
+Stop emits `decision:block` on first call, exits 0 on second call with the same
+session_id.
+
 ### 8. Verification and validation
 
 ```bash
