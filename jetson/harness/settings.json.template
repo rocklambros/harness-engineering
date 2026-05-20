@@ -141,10 +141,11 @@
   "_comment_mcp": "MCP servers are intentionally not listed here. Per AP.7 (lazy load), servers load on demand through tool search rather than at session start.",
   "mcpServers": {},
 
-  "_comment_env": "Telemetry controls. Note: setting telemetry off kills the 1h cache TTL silently per QC.4a. Keep telemetry on unless you have an explicit reason and accept the cache cost.",
+  "_comment_env": "Telemetry controls (DISABLE_TELEMETRY: setting off kills the 1h cache TTL silently per QC.4a, keep on). HARNESS_AUTONOMOUS_MODE=1 silences PreToolUse-supply-chain-bash-checks and PreToolUse-bash-cap-subcommands (between 30 and 49 chained subcommands). Destructive hooks (external-write-gate, git-push-force, cached-prefix-write-gate, SessionStart-audit) ignore the flag. Forensic log at ~/.claude/hooks/autonomous-bypass.log. Per-project override via project .claude/settings.json env block. See foundation/01-threat-model.md 'Autonomous mode trade.'",
   "env": {
     "DISABLE_TELEMETRY": "0",
-    "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "0"
+    "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "0",
+    "HARNESS_AUTONOMOUS_MODE": "1"
   },
 
   "_comment_status_line": "Status line surfaces drift-check result and hook log size for visibility. Update path if your harness install location differs.",

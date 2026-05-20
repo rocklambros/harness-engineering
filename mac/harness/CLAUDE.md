@@ -54,6 +54,8 @@ Permission mode defaults to default for write phases and plan for read-heavy pha
 
 Hooks are registered in `.claude/settings.json`. They invoke scripts in `harness/hooks/`. Do not move the hook scripts without updating the settings.
 
+The `HARNESS_AUTONOMOUS_MODE` env flag (sourced from the `env` block in `~/.claude/settings.json`, with per-project override in this project's `.claude/settings.json`) silences the supply-chain and bash-cap PreToolUse hooks when set to `"1"`, so long-running unattended agents complete without pausing on noisy prompts. Destructive hooks (external-write-gate, git-push-force, cached-prefix-write-gate, SessionStart-audit) ignore the flag. Forensic log at `~/.claude/hooks/autonomous-bypass.log`, rotates at 1 MiB. Set the project value to `"0"` on sensitive engagements (client work, security audits, anything where supply-chain attack surface needs full prompting). Trade documented in `foundation/01-threat-model.md`.
+
 Skills live in `harness/skills/`. They are discovered by Claude Code automatically and load on demand. New skills go in this directory.
 
 MCP server configuration is not in this file. Servers load on demand via tool search.
