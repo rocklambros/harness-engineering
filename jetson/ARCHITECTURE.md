@@ -85,6 +85,21 @@ The methodology binding (SecureForge Appendix C, R.2.1) is identical. The taxono
 | Python runtime | Anaconda 3.12.2 (default) + system 3.10.12 | Different (Homebrew on Mac) | Phase 2 A.1 |
 | Package manager | apt + pip + conda | Different (Homebrew on Mac) | Phase 2 A.1/A.2/A.3 |
 | Pre-commit framework | pre-commit (pip into conda base) | Same | Phase 2 A.1 |
+| Memory persistence | claude-mem (`npx claude-mem install`) | Different (MemPalace on Mac) | See "Memory layer divergence" below |
+
+### Memory layer divergence
+
+Mac uses MemPalace, Jetson uses claude-mem. The capability "persistent context across sessions" exists on both platforms per AP.3, but the implementations and operating models differ enough that the hooks layer reflects the gap.
+
+MemPalace exposes a model-callable protocol: `mempalace_search` and `mempalace_kg_query` for retrieval, `mempalace_kg_add` plus `mempalace_add_drawer` for structured filing, `mempalace_diary_write` for session reflection. The model is expected to call these explicitly. On Mac the deterministic layer carries two enforcement hooks (`SessionStart-mempalace-protocol.sh` injects the protocol reminder, `Stop-mempalace-diary-reminder.sh` blocks the first Stop per session until a diary entry lands).
+
+claude-mem captures sessions automatically through its own installed hooks, compresses observations via the Claude Agent SDK, and injects relevant context into future sessions without model action. Its only model-facing surface is the `mem-search` skill for explicit retrieval. The README advertises "no manual intervention required." Adding MemPalace-style enforcement hooks on Jetson would fight that design.
+
+Therefore the Jetson deterministic layer ships **no memory-protocol enforcement hooks**. The MemPalace hooks present in `mac/harness/hooks/` and `windows/harness/hooks/` are deliberately absent from `jetson/harness/hooks/`. The capability is achieved via claude-mem's own plugin hooks, which are installed and managed outside this harness through `npx claude-mem install`.
+
+Reason for divergence: MemPalace does not run on Jetson AGX Orin hardware. Adopting claude-mem there preserves the cross-session-context capability without forcing the harness to ship a tool that does not work on the platform. Per AP.3, the alternative (drop the capability everywhere or downgrade everywhere to a tool that exists on all three) was rejected because the capability is high-value on Mac and the workaround on Jetson is functionally complete through claude-mem's automatic operation.
+
+Follow-ups not addressed in this divergence note: claude-mem is not yet recorded as an adopted seed in `foundation/03-seed-evaluation-methodology.md` §Seeds. Windows is currently assumed to be MemPalace-compatible pending hardware validation; if that assumption breaks during Phase 3 hardware work, this section becomes a two-platform divergence.
 
 ## Build sequence on Jetson
 

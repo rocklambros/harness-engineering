@@ -146,9 +146,14 @@ check_threat_references() {
   local defined_ids
   defined_ids="$(extract_ids threat < "$threat_file")"
 
+  # Exclude integration-test.sh scripts: those use T.N as test section
+  # labels (T for Test, not Threat), which collide with the threat-ID
+  # convention. They are test scaffolding, not threat-model artifacts.
   local referenced_ids
   referenced_ids="$(git grep -hE 'T\.[0-9]+' -- \
-    '*.md' '*.sh' ':(exclude)research/' \
+    '*.md' '*.sh' \
+    ':(exclude)research/' \
+    ':(exclude)*/scripts/integration-test.sh' \
     2>/dev/null | extract_ids threat || true)"
 
   local fail=0
