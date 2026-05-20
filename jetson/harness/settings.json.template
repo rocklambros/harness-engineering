@@ -46,7 +46,7 @@
     ]
   },
 
-  "_comment_hooks": "Hooks register against Claude Code events. PostToolUse on Write and Edit fires the commit-time Semgrep hook (the SecureForge Appendix C pattern, R.2.1). Hooks fail closed per AP.8.",
+  "_comment_hooks": "Hooks register against Claude Code events. PostToolUse on Write and Edit fires the commit-time Semgrep hook (the SecureForge Appendix C pattern, R.2.1). Hooks fail closed per AP.8. MemPalace hooks present on Mac are intentionally absent here per the Memory layer divergence in jetson/ARCHITECTURE.md (Jetson uses claude-mem, which operates via its own automatic capture rather than a model-callable protocol).",
   "hooks": {
     "PostToolUse": [
       {
@@ -68,6 +68,31 @@
             "type": "command",
             "command": "{{REPO_ROOT}}/harness/hooks/pre-tool-use-shell-audit.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "{{REPO_ROOT}}/harness/hooks/PreToolUse-bash-cap-subcommands.py"
+          },
+          {
+            "type": "command",
+            "command": "{{REPO_ROOT}}/harness/hooks/PreToolUse-supply-chain-bash-checks.py"
+          },
+          {
+            "type": "command",
+            "command": "{{REPO_ROOT}}/harness/hooks/PreToolUse-git-push-force-ask.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{REPO_ROOT}}/harness/hooks/PreToolUse-external-write-gate.py"
+          },
+          {
+            "type": "command",
+            "command": "{{REPO_ROOT}}/harness/hooks/PreToolUse-cached-prefix-write-gate.py"
           }
         ]
       }
@@ -80,6 +105,21 @@
             "type": "command",
             "command": "{{REPO_ROOT}}/harness/hooks/session-start.sh",
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "{{REPO_ROOT}}/harness/hooks/SessionStart-audit-claude-config.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{REPO_ROOT}}/harness/hooks/Stop-prune-session-logs.py"
           }
         ]
       }
