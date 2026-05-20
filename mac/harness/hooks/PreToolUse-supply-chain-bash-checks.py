@@ -30,11 +30,20 @@ Verify (ask, curl pipe shell):
         python3 PreToolUse-supply-chain-bash-checks.py
     # exit 0, stdout: permissionDecision=ask
 
-Owner: harness-engineering (Phase 3, 2026-05-11)
+Verify (allow under autonomous mode):
+    HARNESS_AUTONOMOUS_MODE=1 \
+        echo '{"tool_name":"Bash","tool_input":{"command":"pip install requests"}}' | \
+        HARNESS_AUTONOMOUS_MODE=1 python3 PreToolUse-supply-chain-bash-checks.py
+    # exit 0, stdout: permissionDecision=allow, line appended to
+    # ~/.claude/hooks/autonomous-bypass.log
+
+Owner: harness-engineering (Phase 3, 2026-05-11; autonomous-mode bypass 2026-05-20)
 """
 import json
+import os
 import re
 import sys
+from datetime import datetime, timezone
 
 # Pattern, label.
 UNPINNED_PATTERNS = [
@@ -107,6 +116,71 @@ def find_violation(cmd: str):
     return None
 
 
+# Autonomous-mode bypass: when HARNESS_AUTONOMOUS_MODE=1 (sourced from
+# ~/.claude/settings.json env, project may override), this hook returns
+# "allow" instead of "ask" and writes a forensic log line. Trust anchor:
+# settings.json is itself gated by PreToolUse-external-write-gate.py, so
+# the model cannot enable bypass on its own.
+#
+# Trade documented in foundation/01-threat-model.md. Destructive-class
+# hooks (git push --force, external-write-gate, cached-prefix-write-gate,
+# SessionStart-audit) do NOT honor the flag.
+_BYPASS_LOG = os.path.expanduser("~/.claude/hooks/autonomous-bypass.log")
+_BYPASS_LOG_MAX = 1 << 20  # 1 MiB, single .1 backup on rotate
+
+
+def _rotate_bypass_log() -> None:
+    # OSError swallowed: forensic logging must not block the bypass decision.
+    try:
+        if os.path.exists(_BYPASS_LOG) and os.path.getsize(_BYPASS_LOG) >= _BYPASS_LOG_MAX:
+            backup = _BYPASS_LOG + ".1"
+            try:
+                if os.path.exists(backup):
+                    os.remove(backup)
+            except OSError:
+                pass
+            os.rename(_BYPASS_LOG, backup)
+    except OSError:
+        pass
+
+
+def autonomous_bypass(tool_name: str, command: str,
+                      hook_name: str, reason: str) -> bool:
+    """Emit allow JSON and log when HARNESS_AUTONOMOUS_MODE=1.
+
+    Returns True if the bypass fired (caller must not print its own ask
+    payload). Returns False when the flag is unset or any value other
+    than "1".
+    """
+    if os.environ.get("HARNESS_AUTONOMOUS_MODE", "0") != "1":
+        return False
+    _rotate_bypass_log()
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    line = "\t".join((ts, hook_name, tool_name,
+                      command.replace("\n", "\\n"), reason)) + "\n"
+    try:
+        with open(_BYPASS_LOG, "a", encoding="utf-8") as f:
+            f.write(line)
+    except OSError:
+        pass
+    out = {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "permissionDecisionReason": (
+                f"HARNESS_AUTONOMOUS_MODE=1: silenced {hook_name} "
+                f"({reason}). Logged to ~/.claude/hooks/autonomous-bypass.log."
+            ),
+            "additionalContext": (
+                f"[autonomous] {hook_name} silenced for tool={tool_name}: "
+                f"{reason}. Forensic log: ~/.claude/hooks/autonomous-bypass.log."
+            ),
+        }
+    }
+    print(json.dumps(out))
+    return True
+
+
 def main() -> int:
     try:
         data = json.load(sys.stdin)
@@ -119,6 +193,13 @@ def main() -> int:
         return 0
     label = find_violation(cmd)
     if label is None:
+        return 0
+    if autonomous_bypass(
+        tool_name="Bash",
+        command=cmd,
+        hook_name="PreToolUse-supply-chain-bash-checks",
+        reason=label,
+    ):
         return 0
     out = {
         "hookSpecificOutput": {

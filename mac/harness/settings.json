@@ -50,6 +50,11 @@
     "additionalDirectories": []
   },
 
+  "_comment_env": "HARNESS_AUTONOMOUS_MODE=1 silences PreToolUse-supply-chain-bash-checks and PreToolUse-bash-cap-subcommands (between 30 and 49 chained subcommands). Destructive hooks (external-write-gate, git-push-force, cached-prefix-write-gate, SessionStart-audit) ignore the flag. Forensic log at ~/.claude/hooks/autonomous-bypass.log. Per-project override via project .claude/settings.json env block. See foundation/01-threat-model.md 'Autonomous mode trade.'",
+  "env": {
+    "HARNESS_AUTONOMOUS_MODE": "1"
+  },
+
   "hooks": {
     "_documentation": [
       "Hook scripts in mac/harness/hooks/, each carries a header block with its",

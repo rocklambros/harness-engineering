@@ -172,6 +172,30 @@ Pin Claude Code to a minor-version range in the harness CLAUDE.md status section
 
 JOURNEY.md entries on minor-version bumps document what changed and what was re-evaluated.
 
+## Autonomous mode trade
+
+The `HARNESS_AUTONOMOUS_MODE=1` env var, sourced from `~/.claude/settings.json` (project `.claude/settings.json` may override), instructs two PreToolUse hooks to return `allow` instead of `ask` for a defined subset of their findings. This is a deliberate weakening of the T.4 and T.5 mitigations, accepted in exchange for letting long-running unattended agents complete without operator prompts that would pause them indefinitely.
+
+What it silences:
+
+`PreToolUse-supply-chain-bash-checks.py` returns `allow` on every finding it would have prompted: unpinned `npx -y`, unpinned `uvx --from git+`, `@latest` tags, `pip install` without version constraint, `curl|sh` and `wget|bash` patterns.
+
+`PreToolUse-bash-cap-subcommands.py` returns `allow` when the chain has between 31 and 49 subcommands. At 50 and above the deny stands, because Adversa.ai 2026 documents that per-subcommand deny-rule checks stop firing above 50, an irreversible loss of the deterministic floor.
+
+What it does not silence:
+
+`PreToolUse-external-write-gate.py`, `PreToolUse-git-push-force-ask.py`, `PreToolUse-cached-prefix-write-gate.py`, and `SessionStart-audit-claude-config.py` ignore the flag. These guard reversibility-low actions (writes outside cwd to settings.json or mcp.json, force push, cache-prefix mutations, hostile config in cloned repos under CVE-2025-59536 and CVE-2026-21852) where the cost of an inappropriate allow exceeds the workflow benefit.
+
+Trust anchor: the env var is sourced from a settings.json file, and settings.json itself sits behind the external-write gate. The model cannot enable autonomous mode by writing to settings.json without an operator prompt. The flag therefore reflects operator intent at the moment they last edited the file.
+
+Residual risk under T.5: a prompt-injected agent under autonomous mode can request a package install of a name the attacker controls. The PostToolUse Semgrep gate still scans any code the agent writes that references the package, and the bypass log at `~/.claude/hooks/autonomous-bypass.log` records every silenced finding for after-action review. The operator accepts this risk by leaving the flag set.
+
+Residual risk under T.4: the 50-subcommand hard cap holds. The 30-to-49 range becomes available without the prompt-time check, but the runtime fallback above 50 still binds.
+
+Per-project override: a project `.claude/settings.json` env block with `"HARNESS_AUTONOMOUS_MODE": "0"` restores prompting for that project. Use this on sensitive engagements (client work, security audits, anything where unattended supply-chain risk is not acceptable).
+
+Audit trail: each silenced event writes one TSV line to `~/.claude/hooks/autonomous-bypass.log` (timestamp, hook name, tool, command, reason). File rotates at 1 MiB to `.log.1` with a single retained backup. The model also receives an `additionalContext` reminder so its turn output narrates the bypass.
+
 ## Threat ranking
 
 Ranked by expected loss (frequency times severity), informed by the data in `foundation/04-research-references.md`:
