@@ -81,6 +81,28 @@ extract_ids() {
     }' | sort -u
 }
 
+# Detect which platform source tree to compare deployed hooks against.
+# Darwin = mac, aarch64 Linux = jetson, x86_64 Linux or MINGW/MSYS = windows.
+detect_hook_source_dir() {
+  local kernel arch
+  kernel="$(uname -s)"
+  arch="$(uname -m)"
+  case "$kernel" in
+    Darwin)          echo "mac/harness/hooks" ;;
+    Linux)
+      if [[ "$arch" == "aarch64" ]]; then
+        echo "jetson/harness/hooks"
+      else
+        echo "linux/harness/hooks"
+      fi
+      ;;
+    MINGW*|MSYS*|CYGWIN*)  echo "windows/harness/hooks" ;;
+    *)               echo "mac/harness/hooks" ;;
+  esac
+}
+
+HOOK_SOURCE_DIR="$(detect_hook_source_dir)"
+
 # Check 1: foundation docs reference research files that exist.
 check_research_references() {
   local fail=0
@@ -189,7 +211,8 @@ check_hook_shell() {
 # Check 5: deployed hooks match their tracked source byte for byte.
 #
 # The live hooks under ~/.claude/hooks/ are copies of the tracked source in
-# mac/harness/hooks/. The on-disk name differs by the event-prefix convention
+# the platform-specific harness directory (detected by HOOK_SOURCE_DIR).
+# The on-disk name differs by the event-prefix convention
 # (post-tool-use-semgrep.sh deploys as PostToolUse-semgrep.sh) while the
 # content must stay identical. A source edit that never reaches the live copy,
 # or a live edit that never returns to source, is the silent-drift failure
@@ -201,6 +224,11 @@ check_deployed_hooks() {
   local dst_dir="${HOME}/.claude/hooks"
   if [[ ! -d "$dst_dir" ]]; then
     log_warn "$dst_dir absent, skipping deployed-hook parity check"
+    return 0
+  fi
+
+  if [[ ! -d "$HOOK_SOURCE_DIR" ]]; then
+    log_warn "$HOOK_SOURCE_DIR absent, skipping deployed-hook parity check"
     return 0
   fi
 
@@ -217,15 +245,15 @@ check_deployed_hooks() {
     for cand in "$base" "$mapped"; do
       if [[ -f "$dst_dir/$cand" ]]; then
         if ! cmp -s "$src" "$dst_dir/$cand"; then
-          log_drift "deployed hook differs from source: $cand vs mac/harness/hooks/$base"
+          log_drift "deployed hook differs from source: $cand vs $HOOK_SOURCE_DIR/$base"
           fail=1
         fi
         break
       fi
     done
-  done < <(find mac/harness/hooks -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null || true)
+  done < <(find "$HOOK_SOURCE_DIR" -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null || true)
 
-  [[ $fail -eq 0 ]] && log_ok "deployed hooks match tracked source"
+  [[ $fail -eq 0 ]] && log_ok "deployed hooks match tracked source ($HOOK_SOURCE_DIR)"
 }
 
 main() {
