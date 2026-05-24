@@ -13,19 +13,33 @@ Decision: Mandatory deterministic enforcement of Principle 3. Not threat-elected
           not threat-elected (per-phase). Matches the Phase 3 prompt's explicit
           mandatory-hook list.
 
-Exemption: Claude Code's own managed, regenerable write stores are exempt as a
-           class. These are written on most sessions as part of normal operation,
-           are not project source, and are not irreversible in the Principle 3
-           sense. Gating them produces high-frequency prompts that train
-           reflexive approval and erode the gate's signal for writes that
-           matter. The class today:
-             1. Auto-memory: ~/.claude/projects/<encoded-cwd>/memory/...
-             2. Plan files: ~/.claude/plans/...
+Exemption: Two classes are exempt because Principle 3's "not reversible from
+           version control" rationale does not apply to them.
+
+           Class 1: Claude Code's own managed, regenerable write stores. Written
+           on most sessions, not project source, not irreversible. Gating them
+           produces high-frequency prompts that train reflexive approval and
+           erode the gate's signal for writes that matter. The class today:
+             a. Auto-memory: ~/.claude/projects/<encoded-cwd>/memory/...
+             b. Plan files: ~/.claude/plans/...
            Everything else under ~/.claude/ stays gated (settings.json, mcp.json,
            hooks/, skills/, agents/, CLAUDE.md, audited-hashes.json, etc.).
            Custom plansDirectory or autoMemoryDirectory overrides outside these
            default paths are not auto-detected; if you set them, extend
            is_claude_code_managed_store accordingly.
+
+           Class 2: Git worktrees of the repository containing cwd. A worktree
+           shares the .git common dir with cwd, so writes to it are reversible
+           through the same repository. The Principle 3 rationale does not hold.
+           Detection: enumerate `git worktree list --porcelain` from cwd once,
+           realpath each worktree path, and check whether the candidate write
+           target is at or under any of them. State-independent of the target
+           path, so writes to not-yet-existing subdirectories of a worktree
+           (the common case when Claude creates new files) still exempt
+           correctly. Any subprocess or resolution failure falls through to
+           ask (safe default). Submodules and unrelated repos do not appear in
+           cwd's worktree list and are intentionally not exempted: a submodule
+           is a separate repository with separate reversibility characteristics.
 
 Verify (allow, inside cwd):
     echo "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"./local.txt\"},\"cwd\":\"$PWD\"}" | \
@@ -47,13 +61,25 @@ Verify (allow, plan file):
         python3 PreToolUse-external-write-gate.py
     # exit 0, empty stdout
 
-Owner: harness-engineering (Phase 3, 2026-05-11)
+Verify (allow, sibling worktree of same repo):
+    # In a repo with a worktree at ../sibling-wt added via `git worktree add`:
+    echo "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"../sibling-wt/x.txt\"},\"cwd\":\"$PWD\"}" | \
+        python3 PreToolUse-external-write-gate.py
+    # exit 0, empty stdout
+
+Owner: harness-engineering (Phase 3, 2026-05-11; worktree exemption 2026-05-23)
 """
+
 import json
 import os
+import subprocess
 import sys
 
 WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
+
+# git rev-parse is fast (<20 ms typical) but we cap it so a wedged git
+# never blocks the gate. Failure-mode is fall-through to ask, not allow.
+_GIT_TIMEOUT_SEC = 2
 
 
 def extract_path(tool_input: dict) -> str:
@@ -62,6 +88,43 @@ def extract_path(tool_input: dict) -> str:
         if v:
             return v
     return ""
+
+
+def is_in_repo_worktree(abs_path: str, abs_cwd: str) -> bool:
+    # True iff abs_path is at or under any worktree of cwd's repo.
+    # Single git call from cwd: works even when the candidate path's parent
+    # does not exist yet (the common Write-new-file case that earlier
+    # common-dir-comparison logic missed). Realpath on both sides defeats
+    # symlink tricks that could otherwise spoof membership.
+    if not os.path.isdir(abs_cwd):
+        return False
+    try:
+        result = subprocess.run(
+            ["git", "-C", abs_cwd, "worktree", "list", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT_SEC,
+            check=True,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return False
+    try:
+        real_target = os.path.realpath(abs_path)
+    except OSError:
+        return False
+    for line in result.stdout.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        wt_raw = line[len("worktree ") :].strip()
+        if not wt_raw:
+            continue
+        try:
+            wt_real = os.path.realpath(wt_raw)
+        except OSError:
+            continue
+        if real_target == wt_real or real_target.startswith(wt_real + os.sep):
+            return True
+    return False
 
 
 def is_claude_code_managed_store(abs_path: str, home: str) -> bool:
@@ -111,6 +174,8 @@ def main() -> int:
     if common == abs_cwd:
         return 0
     if is_claude_code_managed_store(abs_path, home):
+        return 0
+    if is_in_repo_worktree(abs_path, abs_cwd):
         return 0
     out = {
         "hookSpecificOutput": {

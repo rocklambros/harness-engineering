@@ -31,12 +31,15 @@ Exemption: Two classes are exempt because Principle 3's "not reversible from
            Class 2: Git worktrees of the repository containing cwd. A worktree
            shares the .git common dir with cwd, so writes to it are reversible
            through the same repository. The Principle 3 rationale does not hold.
-           Detection: compare `git rev-parse --git-common-dir` resolved through
-           realpath for cwd vs the candidate path's directory. Match means same
-           repo, different worktree. Any subprocess or resolution failure falls
-           through to ask (safe default). Submodules carry their own common dir
-           and are not exempted, which is correct: a submodule is a separate
-           repository with separate reversibility characteristics.
+           Detection: enumerate `git worktree list --porcelain` from cwd once,
+           realpath each worktree path, and check whether the candidate write
+           target is at or under any of them. State-independent of the target
+           path, so writes to not-yet-existing subdirectories of a worktree
+           (the common case when Claude creates new files) still exempt
+           correctly. Any subprocess or resolution failure falls through to
+           ask (safe default). Submodules and unrelated repos do not appear in
+           cwd's worktree list and are intentionally not exempted: a submodule
+           is a separate repository with separate reversibility characteristics.
 
 Verify (allow, inside cwd):
     echo "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"./local.txt\"},\"cwd\":\"$PWD\"}" | \
@@ -87,45 +90,41 @@ def extract_path(tool_input: dict) -> str:
     return ""
 
 
-def _git_common_dir(start: str) -> str:
-    # Resolves the .git common dir for a path. Returns "" on any failure
-    # so the caller falls through to the gate. Realpath defeats symlink
-    # tricks that could otherwise spoof equality.
-    if not start or not os.path.isdir(start):
-        return ""
+def is_in_repo_worktree(abs_path: str, abs_cwd: str) -> bool:
+    # True iff abs_path is at or under any worktree of cwd's repo.
+    # Single git call from cwd: works even when the candidate path's parent
+    # does not exist yet (the common Write-new-file case that earlier
+    # common-dir-comparison logic missed). Realpath on both sides defeats
+    # symlink tricks that could otherwise spoof membership.
+    if not os.path.isdir(abs_cwd):
+        return False
     try:
         result = subprocess.run(
-            ["git", "-C", start, "rev-parse", "--git-common-dir"],
+            ["git", "-C", abs_cwd, "worktree", "list", "--porcelain"],
             capture_output=True,
             text=True,
             timeout=_GIT_TIMEOUT_SEC,
             check=True,
         )
     except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        return ""
-    raw = result.stdout.strip()
-    if not raw:
-        return ""
-    if not os.path.isabs(raw):
-        raw = os.path.abspath(os.path.join(start, raw))
+        return False
     try:
-        return os.path.realpath(raw)
+        real_target = os.path.realpath(abs_path)
     except OSError:
-        return ""
-
-
-def is_in_repo_worktree(abs_path: str, abs_cwd: str) -> bool:
-    # True iff abs_path is inside any worktree of the same repo as abs_cwd.
-    # Same-repo means they share the .git common dir. A submodule has its own
-    # common dir and is intentionally not exempted.
-    candidate_dir = abs_path if os.path.isdir(abs_path) else os.path.dirname(abs_path)
-    cwd_common = _git_common_dir(abs_cwd)
-    if not cwd_common:
         return False
-    cand_common = _git_common_dir(candidate_dir)
-    if not cand_common:
-        return False
-    return cwd_common == cand_common
+    for line in result.stdout.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        wt_raw = line[len("worktree ") :].strip()
+        if not wt_raw:
+            continue
+        try:
+            wt_real = os.path.realpath(wt_raw)
+        except OSError:
+            continue
+        if real_target == wt_real or real_target.startswith(wt_real + os.sep):
+            return True
+    return False
 
 
 def is_claude_code_managed_store(abs_path: str, home: str) -> bool:
