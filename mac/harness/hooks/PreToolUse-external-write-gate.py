@@ -28,7 +28,21 @@ Exemption: Two classes are exempt because Principle 3's "not reversible from
            default paths are not auto-detected; if you set them, extend
            is_claude_code_managed_store accordingly.
 
-           Class 2: Git worktrees of the repository containing cwd. A worktree
+           Class 2: The system ephemeral tmp directory (/tmp). World-writable,
+           cleared on reboot, not under version control: the Principle 3
+           "not reversible from version control" rationale does not apply.
+           Detection realpaths both the candidate write target and /tmp before
+           comparing, so macOS (/tmp -> /private/tmp symlink) and Linux/WSL2
+           (/tmp is a real directory) collapse to the same check. /var/tmp is
+           intentionally NOT exempted: it survives reboot, so the ephemeral
+           rationale is weaker, and writes there stay gated. Trade-off:
+           /tmp is a known prompt-injection landing zone (drop a payload,
+           race a setuid binary, plant a fake socket), so this widens the
+           indirect-injection blast radius. The exemption is scoped tightly
+           (realpath prefix match against /tmp only, no glob, no env override)
+           to keep the widening narrow.
+
+           Class 3: Git worktrees of the repository containing cwd. A worktree
            shares the .git common dir with cwd, so writes to it are reversible
            through the same repository. The Principle 3 rationale does not hold.
            Detection: enumerate `git worktree list --porcelain` from cwd once,
@@ -61,13 +75,24 @@ Verify (allow, plan file):
         python3 PreToolUse-external-write-gate.py
     # exit 0, empty stdout
 
+Verify (allow, /tmp write):
+    echo "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"/tmp/scratch.txt\"},\"cwd\":\"$PWD\"}" | \
+        python3 PreToolUse-external-write-gate.py
+    # exit 0, empty stdout (also passes for /private/tmp/scratch.txt on macOS)
+
+Verify (ask, /var/tmp write):
+    echo "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"/var/tmp/scratch.txt\"},\"cwd\":\"$PWD\"}" | \
+        python3 PreToolUse-external-write-gate.py
+    # exit 0, stdout: hookSpecificOutput with permissionDecision=ask
+
 Verify (allow, sibling worktree of same repo):
     # In a repo with a worktree at ../sibling-wt added via `git worktree add`:
     echo "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"../sibling-wt/x.txt\"},\"cwd\":\"$PWD\"}" | \
         python3 PreToolUse-external-write-gate.py
     # exit 0, empty stdout
 
-Owner: harness-engineering (Phase 3, 2026-05-11; worktree exemption 2026-05-23)
+Owner: harness-engineering (Phase 3, 2026-05-11; worktree exemption 2026-05-23;
+       /tmp exemption 2026-05-25)
 """
 
 import json
@@ -80,6 +105,16 @@ WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 # git rev-parse is fast (<20 ms typical) but we cap it so a wedged git
 # never blocks the gate. Failure-mode is fall-through to ask, not allow.
 _GIT_TIMEOUT_SEC = 2
+
+# Realpath of /tmp computed once at import. Resolves the macOS /tmp ->
+# /private/tmp symlink so writes via either path hit the same check. On
+# Linux/WSL2 /tmp is a real directory and realpath is a no-op. If /tmp
+# does not exist (unreachable on any supported platform) the exemption
+# silently disables and writes fall through to ask.
+try:
+    _TMP_REAL = os.path.realpath("/tmp")
+except OSError:
+    _TMP_REAL = ""
 
 
 def extract_path(tool_input: dict) -> str:
@@ -125,6 +160,21 @@ def is_in_repo_worktree(abs_path: str, abs_cwd: str) -> bool:
         if real_target == wt_real or real_target.startswith(wt_real + os.sep):
             return True
     return False
+
+
+def is_ephemeral_tmp(abs_path: str) -> bool:
+    # True iff abs_path is at or under realpath(/tmp). Realpath on the
+    # candidate defeats symlink tricks that could otherwise spoof membership
+    # (e.g. a symlink at /tmp/foo pointing to /etc). /var/tmp is intentionally
+    # NOT covered: it persists across reboots and the ephemeral rationale
+    # does not hold there.
+    if not _TMP_REAL:
+        return False
+    try:
+        real_target = os.path.realpath(abs_path)
+    except OSError:
+        return False
+    return real_target == _TMP_REAL or real_target.startswith(_TMP_REAL + os.sep)
 
 
 def is_claude_code_managed_store(abs_path: str, home: str) -> bool:
@@ -174,6 +224,8 @@ def main() -> int:
     if common == abs_cwd:
         return 0
     if is_claude_code_managed_store(abs_path, home):
+        return 0
+    if is_ephemeral_tmp(abs_path):
         return 0
     if is_in_repo_worktree(abs_path, abs_cwd):
         return 0
