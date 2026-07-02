@@ -38,15 +38,29 @@ Exemption: Two classes are exempt because Principle 3's "not reversible from
            and are not exempted, which is correct: a submodule is a separate
            repository with separate reversibility characteristics.
 
+           Class 3: Ephemeral scratch under /tmp (the /tmp subtree, including the
+           session scratchpad at /tmp/claude-*/.../scratchpad). Explicitly opted
+           in by the operator to treat throwaway scratch space as low-friction.
+           Principle 3's reversibility rationale is weak here anyway (a /tmp write
+           is not git-reversible either), but /tmp is understood to hold only
+           regenerable working files, and executing anything written there is
+           still gated by the Bash PreToolUse hooks. Matched by absolute-path
+           prefix; a path like /tmpfoo does not match.
+
 Verify (allow, inside cwd):
     echo "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"./local.txt\"},\"cwd\":\"$PWD\"}" | \
         python3 PreToolUse-external-write-gate.py
     # exit 0, empty stdout
 
 Verify (ask, outside cwd):
-    echo "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"/tmp/external.txt\"},\"cwd\":\"$PWD\"}" | \
+    echo "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"/etc/external.txt\"},\"cwd\":\"$PWD\"}" | \
         python3 PreToolUse-external-write-gate.py
     # exit 0, stdout: hookSpecificOutput with permissionDecision=ask
+
+Verify (allow, /tmp scratch):
+    echo "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"/tmp/scratch.txt\"},\"cwd\":\"$PWD\"}" | \
+        python3 PreToolUse-external-write-gate.py
+    # exit 0, empty stdout
 
 Verify (allow, auto-memory store):
     echo "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$HOME/.claude/projects/x/memory/MEMORY.md\"},\"cwd\":\"$PWD\"}" | \
@@ -148,6 +162,14 @@ def is_claude_code_managed_store(abs_path: str, home: str) -> bool:
     return False
 
 
+def is_tmp_scratch(abs_path: str) -> bool:
+    # Class 3: ephemeral scratch under /tmp. See the Exemption note in the
+    # module header. Prefix match on the normalized absolute path so /tmpfoo
+    # does not match; the /tmp root itself and anything beneath it does.
+    tmp_root = os.sep + "tmp"
+    return abs_path == tmp_root or abs_path.startswith(tmp_root + os.sep)
+
+
 def main() -> int:
     try:
         data = json.load(sys.stdin)
@@ -175,6 +197,8 @@ def main() -> int:
     if common == abs_cwd:
         return 0
     if is_claude_code_managed_store(abs_path, home):
+        return 0
+    if is_tmp_scratch(abs_path):
         return 0
     if is_in_repo_worktree(abs_path, abs_cwd):
         return 0
