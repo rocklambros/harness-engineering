@@ -35,7 +35,7 @@ Verify (allow under autonomous mode):
         echo '{"tool_name":"Bash","tool_input":{"command":"pip install requests"}}' | \
         HARNESS_AUTONOMOUS_MODE=1 python3 PreToolUse-supply-chain-bash-checks.py
     # exit 0, stdout: permissionDecision=allow, line appended to
-    # ~/.claude/hooks/autonomous-bypass.log
+    # ~/.claude/logs/autonomous-bypass.log
 
 Owner: harness-engineering (Phase 3, 2026-05-11; autonomous-mode bypass 2026-05-20)
 """
@@ -125,7 +125,7 @@ def find_violation(cmd: str):
 # Trade documented in foundation/01-threat-model.md. Destructive-class
 # hooks (git push --force, external-write-gate, cached-prefix-write-gate,
 # SessionStart-audit) do NOT honor the flag.
-_BYPASS_LOG = os.path.expanduser("~/.claude/hooks/autonomous-bypass.log")
+_BYPASS_LOG = os.path.expanduser("~/.claude/logs/autonomous-bypass.log")
 _BYPASS_LOG_MAX = 1 << 20  # 1 MiB, single .1 backup on rotate
 
 
@@ -169,11 +169,11 @@ def autonomous_bypass(tool_name: str, command: str,
             "permissionDecision": "allow",
             "permissionDecisionReason": (
                 f"HARNESS_AUTONOMOUS_MODE=1: silenced {hook_name} "
-                f"({reason}). Logged to ~/.claude/hooks/autonomous-bypass.log."
+                f"({reason}). Logged to ~/.claude/logs/autonomous-bypass.log."
             ),
             "additionalContext": (
                 f"[autonomous] {hook_name} silenced for tool={tool_name}: "
-                f"{reason}. Forensic log: ~/.claude/hooks/autonomous-bypass.log."
+                f"{reason}. Forensic log: ~/.claude/logs/autonomous-bypass.log."
             ),
         }
     }

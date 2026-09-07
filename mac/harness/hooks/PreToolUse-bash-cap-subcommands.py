@@ -82,7 +82,7 @@ def count_subcommands(cmd: str) -> int:
 # the autonomous flag is not allowed to opt out of. Trust anchor and
 # logging behavior mirror the supply-chain hook; see
 # foundation/01-threat-model.md "Autonomous mode trade."
-_BYPASS_LOG = os.path.expanduser("~/.claude/hooks/autonomous-bypass.log")
+_BYPASS_LOG = os.path.expanduser("~/.claude/logs/autonomous-bypass.log")
 _BYPASS_LOG_MAX = 1 << 20  # 1 MiB, single .1 backup on rotate
 
 
@@ -119,11 +119,11 @@ def autonomous_bypass(tool_name: str, command: str,
             "permissionDecision": "allow",
             "permissionDecisionReason": (
                 f"HARNESS_AUTONOMOUS_MODE=1: silenced {hook_name} "
-                f"({reason}). Logged to ~/.claude/hooks/autonomous-bypass.log."
+                f"({reason}). Logged to ~/.claude/logs/autonomous-bypass.log."
             ),
             "additionalContext": (
                 f"[autonomous] {hook_name} silenced for tool={tool_name}: "
-                f"{reason}. Forensic log: ~/.claude/hooks/autonomous-bypass.log."
+                f"{reason}. Forensic log: ~/.claude/logs/autonomous-bypass.log."
             ),
         }
     }

@@ -188,13 +188,13 @@ What it does not silence:
 
 Trust anchor: the env var is sourced from a settings.json file, and settings.json itself sits behind the external-write gate. The model cannot enable autonomous mode by writing to settings.json without an operator prompt. The flag therefore reflects operator intent at the moment they last edited the file.
 
-Residual risk under T.5: a prompt-injected agent under autonomous mode can request a package install of a name the attacker controls. The PostToolUse Semgrep gate still scans any code the agent writes that references the package, and the bypass log at `~/.claude/hooks/autonomous-bypass.log` records every silenced finding for after-action review. The operator accepts this risk by leaving the flag set.
+Residual risk under T.5: a prompt-injected agent under autonomous mode can request a package install of a name the attacker controls. The PostToolUse Semgrep gate still scans any code the agent writes that references the package, and the bypass log at `~/.claude/logs/autonomous-bypass.log` records every silenced finding for after-action review. The operator accepts this risk by leaving the flag set.
 
 Residual risk under T.4: the 50-subcommand hard cap holds. The 30-to-49 range becomes available without the prompt-time check, but the runtime fallback above 50 still binds.
 
 Per-project override: a project `.claude/settings.json` env block with `"HARNESS_AUTONOMOUS_MODE": "0"` restores prompting for that project. Use this on sensitive engagements (client work, security audits, anything where unattended supply-chain risk is not acceptable).
 
-Audit trail: each silenced event writes one TSV line to `~/.claude/hooks/autonomous-bypass.log` (timestamp, hook name, tool, command, reason). File rotates at 1 MiB to `.log.1` with a single retained backup. The model also receives an `additionalContext` reminder so its turn output narrates the bypass.
+Audit trail: each silenced event writes one TSV line to `~/.claude/logs/autonomous-bypass.log` (timestamp, hook name, tool, command, reason). File rotates at 1 MiB to `.log.1` with a single retained backup. The model also receives an `additionalContext` reminder so its turn output narrates the bypass.
 
 ## Threat ranking
 
