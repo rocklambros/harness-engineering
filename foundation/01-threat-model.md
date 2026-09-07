@@ -196,6 +196,24 @@ Per-project override: a project `.claude/settings.json` env block with `"HARNESS
 
 Audit trail: each silenced event writes one TSV line to `~/.claude/logs/autonomous-bypass.log` (timestamp, hook name, tool, command, reason). File rotates at 1 MiB to `.log.1` with a single retained backup. The model also receives an `additionalContext` reminder so its turn output narrates the bypass.
 
+### What the bypass log does and does not expose
+
+Assessed 2026-09-07, when the log moved out of `hooks/` after 55 commits of it riding the config backup to `claude-config-backup-mac`. Recorded here so the question does not get re-litigated from scratch.
+
+The log records the **command text**, never the command's output. Each line is a fixed five-field TSV, and the command field is the string the model proposed, captured before execution. A command that reads a credential therefore appears in the log; the credential it read does not.
+
+Measured against the committed history at the time of the move:
+
+- gitleaks over all 208 commits in the backup remote: **zero findings**.
+- Three `security find-generic-password` invocations appear. All assign to a shell variable. One carries the operator's own comment "key from Keychain, not printed"; another prints `wc -c` of the value rather than the value.
+- `API_KEY`, `SECRET`, and `PASSWORD` hits are OWASP rule prose, environment variable *names* such as `process.env.CM_ROOT`, and presence checks of the `'SET' if … else 'MISSING'` shape.
+- The only literal that resembles a credential is an Azure tenant UUID, an identifier rather than a secret.
+- No client or engagement names appear. The `_source/PROJECTS` allowlist denial (system design §6) held.
+
+Conclusion: no history rewrite. The residual is operational metadata (filesystem paths, project names, the shape of past work), not credential material, and rewriting the disaster-recovery artifact to remove it would trade a real risk for a theoretical one. The exposure is also static: the log is gitignored as of this change and cannot enter another commit.
+
+**This assessment is contingent on the "command text, not output" property.** Any future change that logs command results, stdout, or tool return values invalidates it and requires re-assessment before the log goes anywhere near a remote.
+
 ## Threat ranking
 
 Ranked by expected loss (frequency times severity), informed by the data in `foundation/04-research-references.md`:
