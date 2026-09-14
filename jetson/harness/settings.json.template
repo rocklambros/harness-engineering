@@ -109,6 +109,11 @@
           {
             "type": "command",
             "command": "{{REPO_ROOT}}/harness/hooks/SessionStart-audit-claude-config.py"
+          },
+          {
+            "type": "command",
+            "command": "{{REPO_ROOT}}/harness/hooks/SessionStart-audit-plugin-updates.py",
+            "timeout": 30
           }
         ]
       }
