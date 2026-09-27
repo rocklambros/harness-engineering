@@ -12,6 +12,7 @@ All hooks fail closed per AP.8: if the script errors, the action is blocked rath
 | `pre-tool-use-shell-audit.sh` | PreToolUse on Bash | Logs shell invocations to `~/.claude-harness/shell-audit.log`. Audit only, does not block. |
 | `session-start.sh` | SessionStart | Runs drift check and Claude Code version check. Surfaces issues but does not block. |
 | `pre-compact-preserve.sh` | PreCompact | Writes active phase state to a preservation file so context survives compaction. |
+| `SessionStart-audit-plugin-updates.py` | SessionStart | Flags enabled plugins whose installed files differ from the reviewed baseline in `~/.claude/plugin-audit/`, with a file-level diff that lists code and instruction changes first. Flags, does not block, because plugins load before SessionStart hooks run. Record a reviewed baseline with `--acknowledge <plugin-id> --note "<review>"`. Traces to T.5 and T.7. Byte-identical to the Mac copy, needs validation on Jetson hardware. |
 
 ## Dependencies
 
