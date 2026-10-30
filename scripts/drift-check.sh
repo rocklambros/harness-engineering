@@ -7,6 +7,8 @@
 #   3. Skills and hooks reference Threat IDs that exist in foundation/01-threat-model.md.
 #   4. Shell hooks pass shellcheck.
 #   5. Deployed ~/.claude/hooks copies match their tracked source byte for byte.
+#   6. Hook registrations agree across the reference settings, the template,
+#      and the live user settings, with documented per-source extras only.
 #
 # Exit codes:
 #   0  no drift found
@@ -256,6 +258,30 @@ check_deployed_hooks() {
   [[ $fail -eq 0 ]] && log_ok "deployed hooks match tracked source ($HOOK_SOURCE_DIR)"
 }
 
+# Check 6: hook registrations agree across settings sources.
+#
+# Check 5 proves the hook files match. This proves the registrations do: the
+# same harness hooks on the same events in mac/harness/settings.json, the
+# adopter template, and the live ~/.claude/settings.json, each allowed only
+# its documented extras, and the five destructive-class hooks registered
+# fail-closed everywhere. A hook that exists on disk but is registered in
+# one source and not another is the drift the October 30, 2026 premortem
+# found and this check closes.
+check_hook_registrations() {
+  if ! command -v python3 >/dev/null 2>&1; then
+    log_warn "python3 not installed, skipping hook registration check"
+    return 0
+  fi
+  local out
+  if out="$(python3 -I scripts/check-hook-registrations.py 2>&1)"; then
+    log_ok "$out"
+  else
+    while IFS= read -r line; do
+      log_drift "${line#drift: }"
+    done <<< "$out"
+  fi
+}
+
 main() {
   echo "Running drift check from $REPO_ROOT"
   check_research_references
@@ -263,6 +289,7 @@ main() {
   check_threat_references
   check_hook_shell
   check_deployed_hooks
+  check_hook_registrations
 
   if [[ $DRIFT_FOUND -eq 1 ]]; then
     echo "${RED}drift detected, commit blocked${RESET}" >&2
