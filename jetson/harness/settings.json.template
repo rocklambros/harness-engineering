@@ -1,12 +1,10 @@
 {
   "_comment_top": "Claude Code settings template for the Jetson harness. Copy to .claude/settings.json in any project adopting the harness. Replace {{REPO_ROOT}} with the absolute path to the project root before use. Comments use _comment_* keys because JSON does not support inline comments.",
-
   "_comment_permissions": "Permission mode defaults to default for write phases. Override to plan for discovery-only sessions. Per AP.1, hooks below provide deterministic enforcement; permission mode is the model-visible scope.",
   "permissions": {
     "defaultMode": "default",
     "allow": [
       "Read(./**)",
-      "Write(./**)",
       "Edit(./**)",
       "Bash(./scripts/**)",
       "Bash(git status:*)",
@@ -20,19 +18,27 @@
       "Bash(ruff format:*)",
       "Bash(pre-commit run:*)",
       "Bash(semgrep:*)",
-      "Bash(gitleaks:*)"
+      "Bash(gitleaks:*)",
+      "Read(//tmp/**)",
+      "Edit(//tmp/**)",
+      "Read(//private/tmp/**)",
+      "Edit(//private/tmp/**)",
+      "Read(//var/folders/*/*/T/**)",
+      "Edit(//var/folders/*/*/T/**)",
+      "Read(//private/var/folders/*/*/T/**)",
+      "Edit(//private/var/folders/*/*/T/**)"
     ],
     "deny": [
       "Read(~/.ssh/**)",
       "Read(~/.aws/credentials)",
       "Read(~/.aws/config)",
-      "Read(/etc/shadow)",
-      "Read(/etc/passwd)",
+      "Read(//etc/shadow)",
+      "Read(//etc/passwd)",
       "Read(~/.config/gh/**)",
       "Read(.env)",
       "Read(.env.*)",
       "Read(secrets/**)",
-      "Read(/proc/nvtegra/*)",
+      "Read(//proc/nvtegra/*)",
       "Read(~/.nvidia-jetson/**)",
       "Bash(curl *| sh)",
       "Bash(curl *| bash)",
@@ -41,12 +47,26 @@
       "Bash(rm -rf /:*)",
       "Bash(rm -rf ~/:*)",
       "Bash(rm -rf $HOME:*)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf $HOME/)",
+      "Bash(rm -rf ${HOME}:*)",
+      "Bash(rm -rf ${HOME}/)",
+      "Bash(rm -rf /Users:*)",
+      "Bash(rm -rf /Users/:*)",
+      "Bash(rm -rf /home:*)",
+      "Bash(rm -rf /home/:*)",
       "Bash(sudo *)",
-      "Bash(nvpmodel -m:*)"
+      "Bash(nvpmodel -m:*)",
+      "Edit(//etc/**)",
+      "Edit(//private/etc/**)",
+      "Edit(~/.ssh/**)",
+      "Edit(~/.gnupg/**)",
+      "Edit(~/.aws/credentials)",
+      "Edit(~/.aws/config)",
+      "Edit(~/.kube/config)"
     ]
   },
-
-  "_comment_hooks": "Hooks register against Claude Code events. PostToolUse on Write and Edit fires the commit-time Semgrep hook (the SecureForge Appendix C pattern, R.2.1). Hooks fail closed per AP.8. MemPalace hooks present on Mac are intentionally absent here per the Memory layer divergence in jetson/ARCHITECTURE.md (Jetson uses claude-mem, which operates via its own automatic capture rather than a model-callable protocol).",
+  "_comment_hooks": "Hooks register against Claude Code events. PostToolUse on Write and Edit fires the commit-time Semgrep hook (the SecureForge Appendix C pattern, R.2.1). The four destructive-class hooks (external-write-gate, cached-prefix-write-gate, git-push-force-ask, bash-deny-rm-protected-paths) fail closed per AP.8: onFailure: block, exec form under python3 -I, 10 second timeout. The other hooks fail open by design, so a stalled advisory hook cannot wedge a run. MemPalace hooks present on Mac are intentionally absent here per the Memory layer divergence in jetson/ARCHITECTURE.md (Jetson uses claude-mem, which operates via its own automatic capture rather than a model-callable protocol).",
   "hooks": {
     "PostToolUse": [
       {
@@ -79,7 +99,23 @@
           },
           {
             "type": "command",
-            "command": "{{REPO_ROOT}}/harness/hooks/PreToolUse-git-push-force-ask.py"
+            "command": "python3",
+            "args": [
+              "-I",
+              "{{REPO_ROOT}}/harness/hooks/PreToolUse-git-push-force-ask.py"
+            ],
+            "onFailure": "block",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "-I",
+              "{{REPO_ROOT}}/harness/hooks/PreToolUse-bash-deny-rm-protected-paths.py"
+            ],
+            "onFailure": "block",
+            "timeout": 10
           }
         ]
       },
@@ -88,11 +124,23 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{REPO_ROOT}}/harness/hooks/PreToolUse-external-write-gate.py"
+            "command": "python3",
+            "args": [
+              "-I",
+              "{{REPO_ROOT}}/harness/hooks/PreToolUse-external-write-gate.py"
+            ],
+            "onFailure": "block",
+            "timeout": 10
           },
           {
             "type": "command",
-            "command": "{{REPO_ROOT}}/harness/hooks/PreToolUse-cached-prefix-write-gate.py"
+            "command": "python3",
+            "args": [
+              "-I",
+              "{{REPO_ROOT}}/harness/hooks/PreToolUse-cached-prefix-write-gate.py"
+            ],
+            "onFailure": "block",
+            "timeout": 10
           }
         ]
       }
@@ -142,25 +190,20 @@
       }
     ]
   },
-
   "_comment_mcp": "MCP servers are intentionally not listed here. Per AP.7 (lazy load), servers load on demand through tool search rather than at session start.",
   "mcpServers": {},
-
-  "_comment_env": "Telemetry controls (DISABLE_TELEMETRY: setting off kills the 1h cache TTL silently per QC.4a, keep on). HARNESS_AUTONOMOUS_MODE=1 silences PreToolUse-supply-chain-bash-checks and PreToolUse-bash-cap-subcommands (between 30 and 49 chained subcommands). Destructive hooks (external-write-gate, git-push-force, cached-prefix-write-gate, SessionStart-audit) ignore the flag. Forensic log at ~/.claude/hooks/autonomous-bypass.log. Per-project override via project .claude/settings.json env block. See foundation/01-threat-model.md 'Autonomous mode trade.'",
+  "_comment_env": "Telemetry controls (DISABLE_TELEMETRY: setting off kills the 1h cache TTL silently per QC.4a, keep on). HARNESS_AUTONOMOUS_MODE=1 silences PreToolUse-supply-chain-bash-checks and PreToolUse-bash-cap-subcommands (between 30 and 49 chained subcommands). Destructive hooks (external-write-gate, git-push-force, bash-deny-rm-protected-paths, cached-prefix-write-gate, SessionStart-audit) ignore the flag. Forensic log at ~/.claude/logs/autonomous-bypass.log. Per-project override via project .claude/settings.json env block. See foundation/01-threat-model.md 'Autonomous mode trade.'",
   "env": {
     "DISABLE_TELEMETRY": "0",
     "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "0",
     "HARNESS_AUTONOMOUS_MODE": "1"
   },
-
   "_comment_status_line": "Status line surfaces drift-check result and hook log size for visibility. Update path if your harness install location differs.",
   "statusLine": {
     "type": "command",
     "command": "{{REPO_ROOT}}/harness/hooks/status-line.sh"
   },
-
   "_comment_version_pin": "Record the Claude Code minor-version range this harness is validated against. Bump triggers QC.5 re-evaluation.",
-  "_validated_claude_code_range": "2.1.x",
-
+  "_validated_claude_code_range": ">=2.1.295,<2.2 (2.1.295: onFailure block on command hooks; 2.1.268: deny rules apply at a symlink's real location; 2.1.228: a Read deny also covers the Write tool)",
   "_comment_jetson": "Jetson-specific deny patterns: /proc/nvtegra/*, ~/.nvidia-jetson/, nvpmodel -m (state-changing). Read-only queries (nvpmodel -q) are allowed per Phase 2 A.4. jetson_clocks is handled through advisory guidance in CLAUDE.md rather than a deny pattern because the prefix-matching Bash(jetson_clocks:*) cannot distinguish the bare invocation (dangerous) from --show (safe)."
 }
