@@ -20,13 +20,27 @@ import json
 import os
 import sys
 
+import platform
+
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-REFERENCE = os.path.join(REPO, "mac", "harness", "settings.json")
-TEMPLATE = os.path.join(REPO, "mac", "harness", "settings.json.template")
 LIVE = os.path.join(
     os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"),
     "settings.json",
 )
+
+
+def _platform() -> str:
+    # Same detection as drift-check.sh: Darwin is the Mac reference build,
+    # aarch64 Linux is the Jetson. Anything else compares against the Mac
+    # sources.
+    if platform.system() == "Linux" and platform.machine() == "aarch64":
+        return "jetson"
+    return "mac"
+
+
+PLATFORM = _platform()
+REFERENCE = os.path.join(REPO, "mac", "harness", "settings.json")
+TEMPLATE = os.path.join(REPO, PLATFORM, "harness", "settings.json.template")
 
 # Hooks each source may carry that the others do not. Everything else must
 # match. Update this table in the same commit that adds a source-specific
@@ -41,13 +55,21 @@ TEMPLATE_ONLY = {
     "session-start.sh",
     "pre-compact-preserve.sh",
 }
-LIVE_ONLY = {
-    "PreToolUse-no-ai-attribution.sh",
-    "backup-config.sh",
-    "PostToolUse-semgrep.sh",
-    "security_reminder_hook.py",
-    "hook_written_file.py",
+LIVE_ONLY_BY_PLATFORM = {
+    # The Mac reference host: attribution guard, config backup, Semgrep
+    # feedback, the hardened security-guidance fork, the watermarks cleaner.
+    "mac": {
+        "PreToolUse-no-ai-attribution.sh",
+        "backup-config.sh",
+        "PostToolUse-semgrep.sh",
+        "security_reminder_hook.py",
+        "hook_written_file.py",
+    },
+    # The Jetson: add a name here in the same commit that registers a
+    # Jetson-only hook in its live settings, so the exception is a decision.
+    "jetson": set(),
 }
+LIVE_ONLY = LIVE_ONLY_BY_PLATFORM[PLATFORM]
 DESTRUCTIVE = {
     "PreToolUse-external-write-gate.py",
     "PreToolUse-cached-prefix-write-gate.py",
@@ -87,10 +109,11 @@ def registrations(path: str) -> dict:
 
 
 def main() -> int:
-    sources = {
-        "reference": (REFERENCE, REFERENCE_ONLY),
-        "template": (TEMPLATE, TEMPLATE_ONLY),
-    }
+    # The Mac reference file is a Mac source. On the Jetson the template is
+    # the only tracked source and the live file is compared against it.
+    sources = {"template": (TEMPLATE, TEMPLATE_ONLY)}
+    if PLATFORM == "mac":
+        sources = {"reference": (REFERENCE, REFERENCE_ONLY), **sources}
     if os.path.isfile(LIVE):
         sources["live"] = (LIVE, LIVE_ONLY)
     regs = {}
@@ -141,7 +164,7 @@ def main() -> int:
     if drift:
         return 1
     print(
-        f"hook registrations agree across {', '.join(labels)} ({len(harness_sets['reference'])} shared harness hooks)"
+        f"hook registrations agree across {', '.join(labels)} ({len(harness_sets[labels[0]])} shared harness hooks, {PLATFORM})"
     )
     return 0
 
