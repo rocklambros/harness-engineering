@@ -61,7 +61,7 @@ Write to /var/tmp/x.txt
 Write to /tmp/clone/.claude/settings.json
 ```
 
-The rule-layer checks need a live `default`-mode session and have not been run in one yet.
+Read back live on October 30, 2026 in nested `default`-mode `-p` sessions on Claude Code 2.1.314, with no `--allowedTools` so only the rules could approve: a Write to `/tmp/harness-allow-probe.txt` succeeded with no prompt, a Write to the `$TMPDIR` spelling (`/var/folders/<xx>/<hash>/T/harness-allow-probe.txt`) succeeded with no prompt, and a Write to `/private/var/db/harness-allow-probe.txt` was refused with the write gate's reversibility message. The `//var/folders/*/*/T/**` rule matches the unresolved spelling the model sends.
 
 ## Provenance
 

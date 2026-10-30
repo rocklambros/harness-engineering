@@ -63,7 +63,7 @@
       "Edit(~/.kube/config)"
     ]
   },
-  "_comment_hooks": "Hooks register against Claude Code events. PostToolUse on Write and Edit fires the commit-time Semgrep hook (the SecureForge Appendix C pattern, R.2.1). The four destructive-class hooks (external-write-gate, cached-prefix-write-gate, git-push-force-ask, bash-deny-rm-protected-paths) fail closed per AP.8: onFailure: block, exec form under python3 -I, 10 second timeout. The other hooks fail open by design, so a stalled advisory hook cannot wedge a run. Registrations mirror mac/harness/settings.json (the Mac reference build) with {{REPO_ROOT}} paths.",
+  "_comment_hooks": "Hooks register against Claude Code events. PostToolUse on Write and Edit fires the commit-time Semgrep hook (the SecureForge Appendix C pattern, R.2.1). The five destructive-class hooks (external-write-gate, cached-prefix-write-gate, git-push-force-ask, bash-deny-rm-protected-paths, ConfigChange-audit-claude-config) fail closed per AP.8: onFailure: block, exec form under python3 -I, 10 second timeout. The other hooks fail open by design, so a stalled advisory hook cannot wedge a run. Registrations mirror mac/harness/settings.json (the Mac reference build) with {{REPO_ROOT}} paths.",
   "hooks": {
     "PostToolUse": [
       {
@@ -182,6 +182,23 @@
           {
             "type": "command",
             "command": "{{REPO_ROOT}}/harness/hooks/Stop-prune-session-logs.py"
+          }
+        ]
+      }
+    ],
+    "ConfigChange": [
+      {
+        "matcher": "project_settings|local_settings",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "-I",
+              "{{REPO_ROOT}}/harness/hooks/ConfigChange-audit-claude-config.py"
+            ],
+            "onFailure": "block",
+            "timeout": 10
           }
         ]
       }

@@ -34,7 +34,7 @@ echo '{"tool_name":"Edit","tool_input":{"file_path":"/private/etc/hosts"}}'
 echo '{"tool_name":"Write","tool_input":{"file_path":"~/.ssh/authorized_keys"}}'
 ```
 
-Each is expected to be refused by the rule layer before any hook runs. a pipe test cannot exercise the rule layer, so confirm in a live `default`-mode session. `PreToolUse-external-write-gate.py` also asks for the same paths, which its test matrix records, so the deny has a second layer behind it.
+Each is refused by the rule layer before any hook runs. Read back live on October 30, 2026 in a nested `default`-mode `-p` session on Claude Code 2.1.314: a Write to `/etc/harness-deny-probe.txt` was refused with "File is in a directory that is denied by your permission settings." `PreToolUse-external-write-gate.py` also asks for the same paths, which its test matrix records, so the deny has a second layer behind it.
 
 ## Provenance
 

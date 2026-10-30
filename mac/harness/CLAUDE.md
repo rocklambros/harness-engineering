@@ -36,7 +36,7 @@ This project has adopted the three-layer security stack: pre-generation guidance
 
 The `security-review` skill loads lazily based on file type. Do not bulk-load it. Trust the skill triggers.
 
-The four destructive-class hooks fail closed: their registrations set `onFailure: block`, so a hook that errors or cannot start blocks the action. Advisory hooks fail open by design. Do not move a hook between the two classes without an explicit decision.
+The five destructive-class hooks fail closed: their registrations set `onFailure: block`, so a hook that errors or cannot start blocks the action. Advisory hooks fail open by design. Do not move a hook between the two classes without an explicit decision.
 
 ## Things that break
 
@@ -54,7 +54,7 @@ Permission mode defaults to default for write phases and plan for read-heavy pha
 
 Hooks are registered in `.claude/settings.json`. They invoke scripts in `harness/hooks/`. Do not move the hook scripts without updating the settings.
 
-The `HARNESS_AUTONOMOUS_MODE` env flag (sourced from the `env` block in `~/.claude/settings.json`, with per-project override in this project's `.claude/settings.json`) silences the supply-chain and bash-cap PreToolUse hooks when set to `"1"`, so long-running unattended agents complete without pausing on noisy prompts. Destructive hooks (external-write-gate, git-push-force, bash-deny-rm-protected-paths, cached-prefix-write-gate) ignore the flag and register with `onFailure: block`. SessionStart-audit ignores the flag too and flags rather than blocks, because a SessionStart hook cannot block. Forensic log at `~/.claude/logs/autonomous-bypass.log`, rotates at 1 MiB. Set the project value to `"0"` on sensitive engagements (client work, security audits, anything where supply-chain attack surface needs full prompting). Trade documented in `foundation/01-threat-model.md`.
+The `HARNESS_AUTONOMOUS_MODE` env flag (sourced from the `env` block in `~/.claude/settings.json`, with per-project override in this project's `.claude/settings.json`) silences the supply-chain and bash-cap PreToolUse hooks when set to `"1"`, so long-running unattended agents complete without pausing on noisy prompts. Destructive hooks (external-write-gate, git-push-force, bash-deny-rm-protected-paths, cached-prefix-write-gate, ConfigChange-audit) ignore the flag and register with `onFailure: block`. SessionStart-audit ignores the flag too and flags rather than blocks, because a SessionStart hook cannot block. The ConfigChange gate is the one that blocks. Forensic log at `~/.claude/logs/autonomous-bypass.log`, rotates at 1 MiB. Set the project value to `"0"` on sensitive engagements (client work, security audits, anything where supply-chain attack surface needs full prompting). Trade documented in `foundation/01-threat-model.md`.
 
 Skills live in `harness/skills/`. They are discovered by Claude Code automatically and load on demand. New skills go in this directory.
 
@@ -80,4 +80,4 @@ Bold for section headers and critical warnings only. Italics sparingly. Currency
 
 ## Status
 
-Pinned to Claude Code >=2.1.295,<2.2. The floor is where `onFailure: block` exists, so the four destructive-class hooks fail closed. 2.1.268 (deny rules at a symlink's real location) and 2.1.228 (Read denies covering the Write tool) sit below it. Pre-commit hook stack version pins live in `.pre-commit-config.yaml`. Harness version recorded in `harness/VERSION` (created at adoption time). Re-evaluation triggers on Claude Code minor-version bumps per QC.5.
+Pinned to Claude Code >=2.1.295,<2.2. The floor is where `onFailure: block` exists, so the five destructive-class hooks fail closed. 2.1.268 (deny rules at a symlink's real location) and 2.1.228 (Read denies covering the Write tool) sit below it. Pre-commit hook stack version pins live in `.pre-commit-config.yaml`. Harness version recorded in `harness/VERSION` (created at adoption time). Re-evaluation triggers on Claude Code minor-version bumps per QC.5.

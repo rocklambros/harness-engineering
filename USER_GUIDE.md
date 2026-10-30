@@ -118,7 +118,7 @@ Most of the time the harness is invisible. Three kinds of action make it visible
 
 **Asked.** A write outside all of the above, such as `~/Documents/notes.txt`. A write to a file that loads or runs in a later session: any `.claude/` directory, `.mcp.json`, `CLAUDE.md`, a hook script, anything under `.git`, even when it sits under `/tmp`. A write to `/var/tmp` or to the rest of `/private`. A force push. A write to a `CLAUDE.md` or `foundation/` file in this repository (the cached-prefix gate). An unpinned package install or a `curl | sh` pattern, unless `HARNESS_AUTONOMOUS_MODE=1` silences it.
 
-**Blocked outright.** `rm -rf` (any recursive or glob form) against the filesystem root, any top-level directory such as `/usr` or `/tmp`, any home directory, a mounted volume, the working directory or one of its parents, or a credential store such as `~/.ssh`. Any `rm` at all under `~/.ssh`, `~/.gnupg`, `~/.aws`, or of the harness's own hooks and settings. Writes to `.env` files, `secrets/` directories, `/etc`, and `~/.ssh`. `sudo`. More than 30 chained subcommands in one Bash call (49 under the autonomous flag). A deny shows up in the transcript as a hook message naming the resolved path and the rule document that explains it.
+**Blocked outright.** A change to the project's `.claude/settings.json` or `settings.local.json` during a session, until its hash is in `~/.claude/audited-hashes.json` (the change is silently not applied, and `~/.claude/logs/config-change-gate.log` records why). `rm -rf` (any recursive or glob form) against the filesystem root, any top-level directory such as `/usr` or `/tmp`, any home directory, a mounted volume, the working directory or one of its parents, or a credential store such as `~/.ssh`. Any `rm` at all under `~/.ssh`, `~/.gnupg`, `~/.aws`, or of the harness's own hooks and settings. Writes to `.env` files, `secrets/` directories, `/etc`, and `~/.ssh`. `sudo`. More than 30 chained subcommands in one Bash call (49 under the autonomous flag). A deny shows up in the transcript as a hook message naming the resolved path and the rule document that explains it.
 
 The line between "asked" and "blocked" is reversibility. Anything the harness can recover from version control or that the OS cleans up on its own passes. Anything that needs a human judgment call asks. Anything with no legitimate use case is denied, and the denial holds in every permission mode, including `--dangerously-skip-permissions`, unless hooks are disabled in a settings file or the session runs with `--bare`.
 
@@ -143,6 +143,8 @@ You will not see the skill content in your session output. It is loaded into Cla
 | `tail -f ~/.claude-harness/shell-audit.log` | Watch shell command activity |
 | `python3 -I harness/hooks/tests/test_external_write_gate.py harness/hooks/PreToolUse-external-write-gate.py` | Prove the write gate still decides every case the way the docs say |
 | `python3 -I harness/hooks/tests/test_bash_deny_rm_protected_paths.py harness/hooks/PreToolUse-bash-deny-rm-protected-paths.py` | Prove the rm deny still catches every reproduced bypass |
+| `python3 -I harness/hooks/tests/test_configchange_audit_claude_config.py harness/hooks/ConfigChange-audit-claude-config.py` | Prove the config audit still blocks an unaudited in-repo settings change |
+| `scripts/claude-unattended.sh "<prompt>" [flags]` | Launch a scripted `-p` run with the gates proven present and `--settings` passed explicitly |
 
 ## Troubleshooting
 

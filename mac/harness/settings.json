@@ -38,7 +38,7 @@
       "form of the system-config and SSH write denials; see",
       "mac/harness/rules/filesystem-deny-write-system-config.md.",
       "",
-      "The four destructive-class hooks register with onFailure: block (Claude Code",
+      "The five destructive-class hooks (the four PreToolUse gates and the ConfigChange audit) register with onFailure: block (Claude Code",
       "2.1.295 or later) and run in exec form under python3 -I with a 10 second timeout, so a hook that cannot start, a",
       "shadowed stdlib module, or a crash blocks the action instead of letting it",
       "through. See mac/harness/hooks/README.md."
@@ -187,6 +187,23 @@
             "type": "command",
             "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/Stop-mempalace-diary-reminder.sh",
             "_documentation": "Blocks the first Stop per session with a system-reminder pointing at mempalace_diary_write. Tracks via a /tmp marker keyed on session_id so the second Stop (after the diary write) passes cleanly. Falls through without wedging if session_id is absent from the payload."
+          }
+        ]
+      }
+    ],
+    "ConfigChange": [
+      {
+        "matcher": "project_settings|local_settings",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "-I",
+              "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/ConfigChange-audit-claude-config.py"
+            ],
+            "onFailure": "block",
+            "timeout": 10
           }
         ]
       }

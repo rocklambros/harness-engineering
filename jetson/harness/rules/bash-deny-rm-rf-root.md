@@ -56,7 +56,7 @@ The automated record runs from the repo root:
 python3 -I mac/harness/hooks/tests/test_bash_deny_rm_protected_paths.py mac/harness/hooks/PreToolUse-bash-deny-rm-protected-paths.py
 ```
 
-Rule layer, positive (expected to be refused by the settings rules alone. Verify in a live `default`-mode session by reading the rules back in `/permissions` and attempting each, since a pipe test cannot exercise the rule layer):
+Rule layer, positive (refused by the settings rules alone). Read back live on October 30, 2026 in nested `default`-mode `-p` sessions on Claude Code 2.1.314 with a probe rule: `Bash(echo harness-rule-probe:*)` refused `echo harness-rule-probe hello` with "Permission to use Bash with command echo harness-rule-probe hello has been denied", let `echo harness-rule-probehello` run (no space boundary), and `Bash(echo harness/:*)` let `echo harness/child` run (a child of the rule's path). The colon form matches, and it matches exactly the way the rm rules below need the hook to cover the rest:
 
 ```
 echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}'
