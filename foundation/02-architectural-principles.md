@@ -81,7 +81,7 @@ This principle is the practical application of QC.4b.
 
 ## AP.8 Fail closed, never silent
 
-When a hook that gates a destructive action errors, the action is blocked. Claude Code treats a hook failure as non-blocking unless the registration says otherwise, so the four destructive-class hooks (the external-write gate, the cached-prefix gate, the force-push gate, and the rm protected-paths deny) register with `onFailure: "block"`, and the advisory hooks fail open on purpose so a stall cannot wedge an unattended run. When a check is ambiguous, the agent stops and surfaces the ambiguity. When a tool reports a finding, the finding is reported, not summarized away.
+When a hook that gates a destructive action errors, the action is blocked. Claude Code treats a hook failure as non-blocking unless the registration says otherwise, so the five destructive-class hooks (the external-write gate, the cached-prefix gate, the force-push gate, the rm protected-paths deny, and the ConfigChange audit) register with `onFailure: "block"`, and the advisory hooks fail open on purpose so a stall cannot wedge an unattended run. When a check is ambiguous, the agent stops and surfaces the ambiguity. When a tool reports a finding, the finding is reported, not summarized away.
 
 The cost of fail-open is asymmetric: a missed finding can ship; a false positive costs a re-run. The harness optimizes for the catchable case.
 
