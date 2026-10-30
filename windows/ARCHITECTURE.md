@@ -114,6 +114,8 @@ Agents (`security-reviewer.md`, `writer-reviewer.md`) are identical.
 
 One Windows-specific consideration: the `session-start.sh` hook on Windows includes a WSL2 health check (verify the distribution is running, verify Semgrep is available, verify path translation works). The check is appended to the same hook script via a Windows-specific section guarded by an environment check.
 
+AP.3 exception recorded October 30, 2026: `PreToolUse-external-write-gate.py` and `PreToolUse-bash-deny-rm-protected-paths.py` are present as byte-identical copies of the Mac source with their test matrices, and the Windows `settings.json.template` is still a scaffold that registers neither. The rm hook inspects only the Bash tool. For the PowerShell tool, Claude Code's own `Remove-Item` check (system paths and bare wildcards denied in every mode) is the native equivalent until the WSL2 validation lands and the template is populated. The write gate's scratch roots on Windows are `/tmp` inside WSL2 and `$TMPDIR` when set. The macOS `getconf` lookup is skipped on other platforms.
+
 ## The three-layer security stack (Windows)
 
 Identical composition. Identical content. Different runtime substrate for Layers 2 and 3.

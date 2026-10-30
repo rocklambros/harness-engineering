@@ -72,6 +72,8 @@ User confirmation is required for actions in the explicit-permission list (downl
 
 The Liu et al. Claude Architecture reverse engineering identifies the 50-subcommand bypass class. Hook registrations for PermissionRequest events provide a deterministic check against that class.
 
+Accepted residual, October 30, 2026 (scratch roots): the external-write gate no longer asks for file-tool writes under `/tmp`, `$TMPDIR`, or the per-user temp directory that `getconf DARWIN_USER_TEMP_DIR` reports, and `settings.json` carries matching `Read` and `Edit` allow rules for those roots. An injected instruction can therefore drop a payload into scratch with no prompt in any mode. The widening is bounded to directories the OS cleans, pre-trust names under those roots (`.claude`, `.mcp.json`, `CLAUDE.md`, `.git`) stay gated, and the rm hook still denies removal of the roots themselves. An earlier same-day revision exempted all of `/private`. It was withdrawn after an adversarial premortem measured that the root also covered persistent per-user application state and world-writable system directories. Rationale and tests in `mac/harness/rules/filesystem-allow-scratch-roots.md`.
+
 ### T.3 Cache-state leakage and replay
 
 Attacker: a passive observer of Anthropic API telemetry or someone who replays a cached prefix.
@@ -104,11 +106,13 @@ Mitigations:
 
 Hook registrations cover the bypass class by registering on the canonical and alternate event names where they differ.
 
-Hooks are written to fail closed: if the hook script errors, the action is blocked, not allowed.
+The four destructive-class hooks fail closed through `onFailure: "block"` and exit 2 on internal error. The advisory hooks fail open by design (see T.7, Fail-closed registration).
 
 Hook scripts are themselves SAST-scanned at pre-commit. A hook that's been tampered with should fail the scan.
 
 The PreToolUse hook on shell tools logs the actual invocation for after-action review.
+
+Accepted residual, October 30, 2026 (rm protected paths): `PreToolUse-bash-deny-rm-protected-paths.py` denies recursive removal of the root, top-level directories, homes, mounted volumes, the working directory and its ancestors, credential stores, and the config root, resolving wrappers, `cd` chains, globs, substitutions, inline scripts, here-strings, pipes into a shell, `eval`, `alias`, `for` loops, `mv`, `find -delete`, `unlink`, and `shred`. It does not judge deletion by a program it does not know (`python`, `rsync --delete`, `git clean`), and it reads an unquoted `echo rm -rf ~` as a removal. Two relaxations are outside its reach: `disableAllHooks` from a project settings file or `--settings`, and a mod that handles `tool.check` on a session without managed settings or an enterprise login. A cloned repository that ships `disableAllHooks: true` in its `.claude/settings.json` turns every hook off for that session, and the SessionStart audit that notices it can only flag. A `ConfigChange` gate, which Claude Code can block on, is the tracked follow-up. The full case list is `mac/harness/hooks/tests/test_bash_deny_rm_protected_paths.py`.
 
 ### T.5 Dependency-supply-chain compromise
 
@@ -172,6 +176,8 @@ Pin Claude Code to a minor-version range in the harness CLAUDE.md status section
 
 JOURNEY.md entries on minor-version bumps document what changed and what was re-evaluated.
 
+Fail-closed registration, October 30, 2026: a hook that cannot start, times out, exits with a code other than 0 or 2, or prints invalid JSON has always been a non-blocking error in Claude Code, and 2.1.295 added the first way to change that, the `onFailure: "block"` registration key. Until this date the harness asserted AP.8 (fail closed) in prose while every registration used the default, so a missing interpreter or a renamed script would have turned every deny into a silent allow. Two relaxations remain outside the registration's reach: `disableAllHooks: true` in a project settings file or a `--settings` file, and `--bare` on a `-p` run, which skips hook discovery and which the vendor states will become the default for `-p`. Unattended launches must pass `--settings ~/.claude/settings.json` explicitly once that lands, and a launcher that does so is a tracked follow-up. The four destructive-class hooks now carry the flag and run under `python3 -I`, and `_claude_code_hook_onfailure_floor` in `settings.json` records the version floor for the QC.5 re-evaluation on the next minor bump. The advisory hooks keep the default on purpose: a stall in a noisy hook must not wedge an unattended run.
+
 ## Autonomous mode trade
 
 The `HARNESS_AUTONOMOUS_MODE=1` env var, sourced from `~/.claude/settings.json` (project `.claude/settings.json` may override), instructs two PreToolUse hooks to return `allow` instead of `ask` for a defined subset of their findings. This is a deliberate weakening of the T.4 and T.5 mitigations, accepted in exchange for letting long-running unattended agents complete without operator prompts that would pause them indefinitely.
@@ -184,7 +190,7 @@ What it silences:
 
 What it does not silence:
 
-`PreToolUse-external-write-gate.py`, `PreToolUse-git-push-force-ask.py`, `PreToolUse-cached-prefix-write-gate.py`, and `SessionStart-audit-claude-config.py` ignore the flag. These guard reversibility-low actions (writes outside cwd to settings.json or mcp.json, force push, cache-prefix mutations, hostile config in cloned repos under CVE-2025-59536 and CVE-2026-21852) where the cost of an inappropriate allow exceeds the workflow benefit.
+`PreToolUse-external-write-gate.py`, `PreToolUse-git-push-force-ask.py`, `PreToolUse-bash-deny-rm-protected-paths.py`, `PreToolUse-cached-prefix-write-gate.py`, and `SessionStart-audit-claude-config.py` ignore the flag. These guard reversibility-low actions (writes outside cwd to settings.json or mcp.json, force push, recursive removal of a root, home, mounted volume, working directory, or credential store, cache-prefix mutations, hostile config in cloned repos under CVE-2025-59536 and CVE-2026-21852) where the cost of an inappropriate allow exceeds the workflow benefit. The four PreToolUse hooks in that list also register with `onFailure: "block"` and run under `python3 -I`, so a hook that cannot start blocks the action rather than letting it through (see T.7).
 
 Trust anchor: the env var is sourced from a settings.json file, and settings.json itself sits behind the external-write gate. The model cannot enable autonomous mode by writing to settings.json without an operator prompt. The flag therefore reflects operator intent at the moment they last edited the file.
 

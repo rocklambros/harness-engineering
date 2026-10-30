@@ -102,10 +102,10 @@ One to two pages. Pure reference material in table form. The reader has thought 
 | `git status` | Pass (silent) | Read-only |
 | `git commit -m "..."` | Pass (silent or single-prompt) | Write to .git inside cwd |
 | `git push` | Pass (with deny check) | Network operation; passes deny |
-| `git push --force` | Blocked | Deny rule `bash-deny-git-push-force` |
+| `git push --force` | Ask | `PreToolUse-git-push-force-ask.py` hook (converted from a deny on May 12, 2026) |
 | `git push --force-with-lease` | Pass | Not matched by deny pattern; use this for legitimate forced pushes |
 | `sudo apt update` | Blocked | Deny rule `bash-deny-sudo` |
-| `rm -rf /tmp/foo` | Pass (auto-mode + path inside common-writable) | Deny rule blocks `rm -rf /` and `rm -rf ~/` and `rm -rf $HOME` only |
+| `rm -rf /tmp/foo` | Pass | A child of a scratch root. The rule layer denies only the bare spellings (`rm -rf /`, `rm -rf ~`, `rm -rf $HOME`, `rm -rf /Users`). `PreToolUse-bash-deny-rm-protected-paths.py` denies the root, every top-level directory, homes, mounted volumes, the cwd, and credential stores, and lets children through |
 | `rm -rf /` | Blocked | Deny rule `bash-deny-rm-rf-root` |
 | `npx -y create-react-app@5.0.1 demo` | Pass (after F04/F05 fix) | Supply-chain hook recognizes pinned version |
 | `npx -y create-react-app demo` | Ask | Supply-chain hook flags unpinned |

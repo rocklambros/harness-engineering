@@ -69,17 +69,77 @@ The phase prompts in `{platform}/prompts/` are runnable Claude Code instructions
 
 ## Hook event coverage
 
-The harness registers hooks on four Claude Code events:
+The Mac reference build registers hooks on five Claude Code events. The adopter template `mac/harness/settings.json.template` and the Jetson template carry the same registrations with `{{REPO_ROOT}}` paths. Windows is a scaffold that registers none (see `windows/ARCHITECTURE.md`).
 
-`PostToolUse` on Write, Edit, and MultiEdit. Fires `post-tool-use-semgrep.sh` for commit-time hardening.
+`PreToolUse` on Bash fires five hooks in order: `PreToolUse-bash-cap-subcommands.py` (deny above 30 chained subcommands), `PreToolUse-supply-chain-bash-checks.py` (ask on unpinned installs and `curl|sh`), `PreToolUse-git-push-force-ask.py` (ask on force pushes), `PreToolUse-bash-deny-rm-protected-paths.py` (deny recursive removal of protected paths), and on the Mac reference build `PreToolUse-no-ai-attribution.sh` (deny AI attribution in commit text). The template also runs `pre-tool-use-shell-audit.sh` first for audit logging.
 
-`PreToolUse` on Bash. Fires `pre-tool-use-shell-audit.sh` for shell audit logging.
+`PreToolUse` on Write, Edit, MultiEdit, and NotebookEdit fires `PreToolUse-external-write-gate.py` (ask on writes outside the recoverable set) and `PreToolUse-cached-prefix-write-gate.py` (ask on writes to the cached-prefix files).
 
-`SessionStart`. Fires `session-start.sh` for drift check and Claude Code version check.
+`PostToolUse` on Write, Edit, and MultiEdit fires `post-tool-use-semgrep.sh` for commit-time hardening.
 
-`PreCompact`. Fires `pre-compact-preserve.sh` to preserve active phase state across compaction.
+`SessionStart` fires `session-start.sh` (drift check and version check), `SessionStart-audit-claude-config.py` (flag an unaudited in-repo settings or `.mcp.json` hash and instruct the session to stop), and `SessionStart-audit-plugin-updates.py` (flag plugin code that differs from its reviewed baseline).
 
-Coverage is informed by the Liu et al. reverse engineering of Claude Code v2.1.x (R.1.1), which enumerates 12-21 events depending on count method. The four registered here are the ones with explicit harness dependencies. Additional events may be added per platform if Phase 1 surfaces specific needs.
+`Stop` fires `Stop-prune-session-logs.py` (90-day transcript retention).
+
+`PreCompact` fires `pre-compact-preserve.sh` to preserve active phase state across compaction.
+
+Coverage is informed by the Liu et al. reverse engineering of Claude Code v2.1.x (R.1.1), which enumerates 12-21 events depending on count method. The events registered here are the ones with explicit harness dependencies.
+
+### Which hooks fail closed
+
+Claude Code treats a hook that cannot start, times out, exits with a code other than 0 or 2, or prints invalid JSON as a non-blocking error: the action goes ahead unless the registration sets `"onFailure": "block"`, a key that exists from 2.1.295. The harness applies that flag to its four destructive-class hooks (the write gate, the cached-prefix gate, the force-push gate, and the rm deny), runs them under `python3 -I` so nothing in the hooks directory or on `PYTHONPATH` can shadow the standard library, and the two newest also exit 2 on any internal error. Every other hook fails open on purpose. A stalled Semgrep run or a supply-chain false positive costs a re-run. A stalled destructive gate must cost a block. The version floor is recorded as `_claude_code_hook_onfailure_floor` in `settings.json` for the QC.5 re-evaluation on a minor bump.
+
+## The deterministic gates
+
+Two hooks and the permission rules decide, before any model judgment, which file writes and which removals need a human. Both hooks apply AP.11: friction scales with how hard the action is to undo.
+
+### Writes: the external-write gate
+
+A write inside the working directory passes. Outside it, the gate stays silent for four classes and asks for everything else.
+
+Claude Code's own managed stores pass: auto-memory under `~/.claude/projects/<project>/memory/` and plan files under `~/.claude/plans/`. They are regenerable and written on most sessions.
+
+Scratch roots pass: `/tmp`, `$TMPDIR`, and on macOS the per-user temp directory that `getconf DARWIN_USER_TEMP_DIR` reports (`/var/folders/<xx>/<hash>/T`). The `getconf` lookup matters because a session launched from the Desktop app or launchd has no `$TMPDIR`. These directories are OS-cleaned and never under version control. `/var/tmp` is not a scratch root because it survives reboot. The whole of `/private` is not a scratch root either: it also holds persistent per-user application state and world-writable system directories, which an October 30, 2026 premortem measured before the exemption was narrowed.
+
+Worktrees of the current repository pass in full, because they share the repository's history and review path.
+
+Ordinary source in any other git working tree passes, because a tracked file there is as recoverable as one in the working directory.
+
+Four things are never exempt, in any class: anything under a `.git` component, the pre-trust names `.claude`, `.mcp.json`, `.claude.json`, `CLAUDE.md`, and `CLAUDE.local.md`, the user-level config root `~/.claude` (or `$CLAUDE_CONFIG_DIR`) outside the managed stores, and repositories rooted at `/` or at home. Those paths load or run code in a later session, so a write there gets a prompt even under a scratch root.
+
+The permission rules carry the scratch decision in the modes that honor allow rules (`Read` and `Edit` on `//tmp/**`, `//private/tmp/**`, and `//var/folders/*/*/T/**` in both spellings), and deny writes to `//etc/**`, `//private/etc/**`, `~/.ssh/**`, and the secret-file globs in every mode. Deny rules win over allow rules and over hook decisions.
+
+### Removals: the rm protected-paths deny
+
+A Bash rule can deny `rm -rf /` but cannot say "this directory but not its children", so the Bash side is a hook. `PreToolUse-bash-deny-rm-protected-paths.py` denies `rm` and `rmdir` whose target resolves to the filesystem root (also spelled `/System/Volumes/Data`), any top-level directory, any `/Users/<name>`, `/home/<name>`, or `/private/<name>`, `$HOME`, a mounted volume (`/Volumes/<drive>`, `/media/<user>`, `/mnt/<name>`, `/run/media/<user>/<drive>`), the session's working directory or any ancestor of it, a credential store under home (`.ssh`, `.gnupg`, `.aws`, `.kube`, `.config/gh`, `.config/gcloud`, `Library/Keychains`), or the parts of `~/.claude` that make the harness enforce anything. Trailing-slash and glob forms count, including dot-globs such as `~/.*`.
+
+The hook resolves what the shell would resolve: `~`, `~user`, `$HOME`, `$TMPDIR`, `$PWD`, a variable bound by `for X in <literals>` on the same line, relative paths against the session cwd, `cd` and `pushd` across chained segments, case-folded spellings on macOS and WSL2, wrappers in any position (`sudo`, `timeout`, `nice -n 5`, `/bin/rm`, `RM`), brace lists, nested `$(...)`, backtick, `<(...)` and `>(...)` substitutions, `eval`, `alias` values, here-strings, pipes into a shell, and `sh -c` scripts. A glob at any depth is the glob form of its deepest literal ancestor, so `~/**/*` is home. A recursive rm whose target is a variable the hook cannot resolve denies rather than guesses. `mv` is judged on its sources, `find` with `-delete` or `-exec rm` on its start paths, and `unlink` and `shred` count as removers. Heredoc bodies are stripped first, only where the operator sits outside quotes, so documentation that quotes a dangerous command can still be written.
+
+Four forms pass on purpose. The glob of a scratch root (`rm -rf /tmp/*`) is cleanup, while the root itself (`rm -rf /tmp`) denies. The glob of the session cwd itself (`rm -rf ./*` in a build directory) empties it, while `rm -rf .` and the glob of any ancestor (`rm -rf ../*`) deny. `git rm` touches the index, which the repository recovers. An rm after `ssh`, `docker`, `kubectl`, or `podman` runs on another filesystem. Children of protected paths pass to the permission mode: `rm -rf ~/proj/build` runs.
+
+The rule layer keeps the bare spellings as a floor (`Bash(rm -rf /:*)`, `Bash(rm -rf ~)`, `Bash(rm -rf $HOME:*)`, `Bash(rm -rf /Users:*)`, and their variants) because a deny rule costs nothing and holds even if the hook is removed. The rationale and the full protected set are in `mac/harness/rules/bash-deny-rm-rf-root.md`.
+
+Claude Code's own critical-path check still runs behind the hook. It prompts with a two-minute countdown in a terminal under `auto` and `bypassPermissions`, denies in the Desktop app unless a `PermissionRequest` hook allows, and covers the root, every top-level directory, home, and the working directory with its parents. The hook exists because a prompt is not a deny, because the native set does not include `/private/<name>`, credential stores, or the config root, because the native parser does not read `eval`, here-strings, or pipes into a shell, and because the native check applies to `rm` and `rmdir` only, so `mv`, `unlink`, `shred`, and `find -delete` have no native backstop.
+
+### Rolling back a gate
+
+A gate that misfires in an unattended run needs a path shorter than "edit the user settings by hand". The live `~/.claude` is a git repository with a backup remote, so the previous hook bodies and registrations are one checkout away:
+
+```bash
+git -C ~/.claude log --oneline -5 -- settings.json hooks/
+git -C ~/.claude checkout <sha> -- settings.json hooks/PreToolUse-bash-deny-rm-protected-paths.py
+```
+
+To run one session with a single gate unregistered while keeping the other three, pass a settings override at launch rather than editing the file: `claude --settings '{"hooks":{"PreToolUse":[...]}}'` with the suspect entry left out. `disableAllHooks: true` is the wrong tool for this: it removes every control at once, including the audit hook. After any hook deploy, run `~/.claude/hooks/backup-config.sh` so the backup never lags the live gates.
+
+### Testing the gates
+
+Both hooks ship with a committed matrix under `mac/harness/hooks/tests/`. Each case pipes a real PreToolUse payload through the hook as a subprocess and checks the exit code and output, so the matrix exercises the entry point the runtime uses. Run them from the repo root after any change to either hook, and after a Claude Code minor bump:
+
+```bash
+python3 -I mac/harness/hooks/tests/test_external_write_gate.py mac/harness/hooks/PreToolUse-external-write-gate.py
+python3 -I mac/harness/hooks/tests/test_bash_deny_rm_protected_paths.py mac/harness/hooks/PreToolUse-bash-deny-rm-protected-paths.py
+```
 
 ## Versioning posture
 

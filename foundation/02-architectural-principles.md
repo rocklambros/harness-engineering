@@ -81,7 +81,7 @@ This principle is the practical application of QC.4b.
 
 ## AP.8 Fail closed, never silent
 
-When a hook errors, the action is blocked. When a check is ambiguous, the agent stops and surfaces the ambiguity. When a tool reports a finding, the finding is reported, not summarized away.
+When a hook that gates a destructive action errors, the action is blocked. Claude Code treats a hook failure as non-blocking unless the registration says otherwise, so the four destructive-class hooks (the external-write gate, the cached-prefix gate, the force-push gate, and the rm protected-paths deny) register with `onFailure: "block"`, and the advisory hooks fail open on purpose so a stall cannot wedge an unattended run. When a check is ambiguous, the agent stops and surfaces the ambiguity. When a tool reports a finding, the finding is reported, not summarized away.
 
 The cost of fail-open is asymmetric: a missed finding can ship; a false positive costs a re-run. The harness optimizes for the catchable case.
 
@@ -102,3 +102,11 @@ The repo is born public at the end of the build phase. There is no discrete "dog
 This shapes what gets written: everything is written for a reader who is not the author. Private context, internal jokes, and shorthand do not appear. The voice is consistent across all artifacts because every artifact is public-facing.
 
 The `JOURNEY.md` entries acknowledge that the build is in progress. They do not apologize for it.
+
+## AP.11 Reversibility weights friction
+
+The friction a harness puts in front of an action matches how hard the action is to undo. A write inside the working directory is recoverable from version control, so it needs no prompt. A write to a scratch directory the operating system cleans is recoverable by being disposable, so it needs no prompt either. A write outside both, a force push, a recursive delete of a home directory, or a change to a file that loads or runs code in a later session is not recoverable from anything the harness controls, so it gets a prompt or a deny before it happens.
+
+The test has two questions. Is the result recoverable from version control or from routine OS cleanup? Does the path load or run code in a later session (a `.claude` directory, `.mcp.json`, `CLAUDE.md`, a hook script, a `.git/hooks` entry)? A yes to the first and a no to the second means no friction. Anything else means friction scaled to the blast radius: ask when the operator can reasonably say yes, deny when the legitimate use case is zero.
+
+Hook headers and rule documents written during Phase 3 cite this principle as "Principle 3 (reversibility-weighted risk)", a name from the Phase 2 interview that never received a section here. Both names refer to this test. The hooks that apply it are `PreToolUse-external-write-gate.py` (ask on writes outside the recoverable set), `PreToolUse-git-push-force-ask.py` (ask on history rewrites), `PreToolUse-cached-prefix-write-gate.py` (ask on cached-prefix mutations), and `PreToolUse-bash-deny-rm-protected-paths.py` (deny on recursive removal of the paths with no recovery).

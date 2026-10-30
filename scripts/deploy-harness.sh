@@ -68,12 +68,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 SRC_HOOKS="$REPO_ROOT/$PLATFORM/harness/hooks"
 SRC_TEMPLATE_CANDIDATES=(
-  "$REPO_ROOT/$PLATFORM/harness/settings.json.template"
   "$REPO_ROOT/$PLATFORM/harness/settings.json"
+  "$REPO_ROOT/$PLATFORM/harness/settings.json.template"
 )
 
-# Pick the first settings source that exists. Mac uses settings.json
-# (no substitution needed today); jetson and windows use the .template.
+# Pick the first settings source that exists. Mac uses settings.json, the
+# reference build's source of truth; jetson and windows have only the
+# .template. Until October 30, 2026 the order was reversed and the mac
+# dry run compared the live hooks block against a stale template.
 SRC_TEMPLATE=""
 for candidate in "${SRC_TEMPLATE_CANDIDATES[@]}"; do
   if [[ -f "$candidate" ]]; then
@@ -170,7 +172,13 @@ trap 'rm -f "$substituted"' EXIT
 # Hook file deployment step above already copies hook scripts into
 # ~/.claude/hooks/, rewrite the placeholder to that deployed location so the
 # substituted settings.json references files that actually exist on the host.
-sed "s|{{REPO_ROOT}}/harness/hooks|$HOME/.claude/hooks|g" "$SRC_TEMPLATE" > "$substituted"
+# The Mac reference settings.json uses ${CLAUDE_PROJECT_DIR}/<platform>/harness/hooks
+# for the same files, so both placeholder families are rewritten. Leaving
+# either one in place would register a path that exists only inside this
+# checkout, and the four fail-closed hooks would then block every call.
+sed -e "s|{{REPO_ROOT}}/harness/hooks|$HOME/.claude/hooks|g" \
+    -e "s|\${CLAUDE_PROJECT_DIR}/$PLATFORM/harness/hooks|$HOME/.claude/hooks|g" \
+    "$SRC_TEMPLATE" > "$substituted"
 
 # Any remaining {{REPO_ROOT}} placeholder is unrelated to hook paths and
 # probably an unhandled case in this script. Surface it loudly so the
@@ -178,11 +186,14 @@ sed "s|{{REPO_ROOT}}/harness/hooks|$HOME/.claude/hooks|g" "$SRC_TEMPLATE" > "$su
 # deployed settings. Documentation-only references inside _comment_*
 # template keys are inert (the comments do not affect runtime) so we
 # filter those out.
-remaining="$(grep -n "{{REPO_ROOT}}" "$substituted" | grep -vE '"_comment_[a-z_]+":' || true)"
+# Only a placeholder that sits in a hook path matters; prose in _comment_*
+# and _documentation values is inert.
+remaining="$(grep -nE '(\{\{REPO_ROOT\}\}|\$\{CLAUDE_PROJECT_DIR\})/[^"]*harness/hooks' "$substituted" || true)"
 if [[ -n "$remaining" ]]; then
-  echo "WARN: unhandled {{REPO_ROOT}} placeholders remain after substitution:" >&2
+  echo "ERROR: placeholders remain in a command path after substitution:" >&2
   printf '%s\n' "$remaining" >&2
-  echo "WARN: rewrite these manually in $DEPLOYED_SETTINGS, or extend this script." >&2
+  echo "ERROR: a registration with a placeholder path cannot start, and the fail-closed hooks would block every call. Extend this script before deploying." >&2
+  exit 2
 fi
 
 # Validate the substituted result is valid JSON before going further.
@@ -209,8 +220,11 @@ with open("$substituted") as f:
     sub = json.load(f)
 with open("$DEPLOYED_SETTINGS") as f:
     dep = json.load(f)
-sub_hooks = json.dumps(sub.get("hooks", {}), indent=2, sort_keys=True)
-dep_hooks = json.dumps(dep.get("hooks", {}), indent=2, sort_keys=True)
+def events(h):
+    # _documentation and _comment_* keys inside hooks are prose, not events.
+    return {k: v for k, v in h.items() if not k.startswith("_")}
+sub_hooks = json.dumps(events(sub.get("hooks", {})), indent=2, sort_keys=True)
+dep_hooks = json.dumps(events(dep.get("hooks", {})), indent=2, sort_keys=True)
 if sub_hooks == dep_hooks:
     print("  hooks block: identical, deployed settings.json is up to date")
     sys.exit(0)

@@ -15,9 +15,7 @@
     "JSON does not support comments; documentation lives in _documentation keys",
     "that Claude Code ignores. The file parses as strict JSON."
   ],
-
-  "_claude_code_version_pin": "2.1.*",
-
+  "_claude_code_version_pin": ">=2.1.295,<2.2 (2.1.295: onFailure block on command hooks; 2.1.268: deny rules apply at a symlink's real location; 2.1.228: a Read deny also covers the Write tool)",
   "permissions": {
     "_documentation": [
       "Deny-first per Claude_Architecture.md §5.2 (toolMatchesRule). Broad denies",
@@ -26,35 +24,69 @@
       "MCP allowlist; those land in mcpServers, not here.",
       "",
       "defaultMode 'auto' enables the ML classifier (Hughes 2026, 0.4% FP rate)",
-      "per Phase 2 Q1. The deny rules below are the deterministic floor under it."
+      "per Phase 2 Q1. The deny rules below are the deterministic floor under it.",
+      "",
+      "Read/Edit allows on //tmp/**, //private/tmp/**, and the per-user temp tree",
+      "//var/folders/*/*/T/** (both spellings) make scratch-space create, read, and",
+      "update prompt-free in default, acceptEdits, and auto modes. bypassPermissions",
+      "ignores allow rules, so the matching exemption lives in",
+      "PreToolUse-external-write-gate.py Class 2. Deletes go through Bash and follow",
+      "the permission mode. Rationale and tests in",
+      "mac/harness/rules/filesystem-allow-scratch-roots.md.",
+      "",
+      "Edit(//etc/**), Edit(//private/etc/**), and Edit(~/.ssh/**) are the enforced",
+      "form of the system-config and SSH write denials; see",
+      "mac/harness/rules/filesystem-deny-write-system-config.md.",
+      "",
+      "The four destructive-class hooks register with onFailure: block (Claude Code",
+      "2.1.295 or later) and run in exec form under python3 -I with a 10 second timeout, so a hook that cannot start, a",
+      "shadowed stdlib module, or a crash blocks the action instead of letting it",
+      "through. See mac/harness/hooks/README.md."
     ],
     "defaultMode": "auto",
-    "allow": [],
+    "allow": [
+      "Read(//tmp/**)",
+      "Edit(//tmp/**)",
+      "Read(//private/tmp/**)",
+      "Edit(//private/tmp/**)",
+      "Read(//var/folders/*/*/T/**)",
+      "Edit(//var/folders/*/*/T/**)",
+      "Read(//private/var/folders/*/*/T/**)",
+      "Edit(//private/var/folders/*/*/T/**)"
+    ],
     "deny": [
       "Bash(claude --dangerously-skip-permissions:*)",
       "Bash(sudo:*)",
       "Bash(rm -rf /:*)",
       "Bash(rm -rf ~/:*)",
       "Bash(rm -rf $HOME:*)",
-      "Write(**/.env)",
-      "Write(**/.env.*)",
-      "Write(**/secrets/**)",
-      "Write(**/.secrets/**)",
-      "Write(**/credentials.json)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf $HOME/)",
+      "Bash(rm -rf ${HOME}:*)",
+      "Bash(rm -rf ${HOME}/)",
+      "Bash(rm -rf /Users:*)",
+      "Bash(rm -rf /Users/:*)",
+      "Bash(rm -rf /home:*)",
+      "Bash(rm -rf /home/:*)",
       "Edit(**/.env)",
       "Edit(**/.env.*)",
       "Edit(**/secrets/**)",
       "Edit(**/.secrets/**)",
-      "Edit(**/credentials.json)"
+      "Edit(**/credentials.json)",
+      "Edit(//etc/**)",
+      "Edit(//private/etc/**)",
+      "Edit(~/.ssh/**)",
+      "Edit(~/.gnupg/**)",
+      "Edit(~/.aws/credentials)",
+      "Edit(~/.aws/config)",
+      "Edit(~/.kube/config)"
     ],
     "additionalDirectories": []
   },
-
-  "_comment_env": "HARNESS_AUTONOMOUS_MODE=1 silences PreToolUse-supply-chain-bash-checks and PreToolUse-bash-cap-subcommands (between 30 and 49 chained subcommands). Destructive hooks (external-write-gate, git-push-force, cached-prefix-write-gate, SessionStart-audit) ignore the flag. Forensic log at ~/.claude/hooks/autonomous-bypass.log. Per-project override via project .claude/settings.json env block. See foundation/01-threat-model.md 'Autonomous mode trade.'",
+  "_comment_env": "HARNESS_AUTONOMOUS_MODE=1 silences PreToolUse-supply-chain-bash-checks and PreToolUse-bash-cap-subcommands (between 30 and 49 chained subcommands). Destructive hooks (external-write-gate, git-push-force, bash-deny-rm-protected-paths, cached-prefix-write-gate, SessionStart-audit) ignore the flag. Forensic log at ~/.claude/logs/autonomous-bypass.log. Per-project override via project .claude/settings.json env block. See foundation/01-threat-model.md 'Autonomous mode trade.'",
   "env": {
     "HARNESS_AUTONOMOUS_MODE": "1"
   },
-
   "hooks": {
     "_documentation": [
       "Hook scripts in mac/harness/hooks/, each carries a header block with its",
@@ -77,7 +109,23 @@
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/PreToolUse-git-push-force-ask.py"
+            "command": "python3",
+            "args": [
+              "-I",
+              "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/PreToolUse-git-push-force-ask.py"
+            ],
+            "onFailure": "block",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "-I",
+              "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/PreToolUse-bash-deny-rm-protected-paths.py"
+            ],
+            "onFailure": "block",
+            "timeout": 10
           }
         ]
       },
@@ -86,11 +134,23 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/PreToolUse-external-write-gate.py"
+            "command": "python3",
+            "args": [
+              "-I",
+              "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/PreToolUse-external-write-gate.py"
+            ],
+            "onFailure": "block",
+            "timeout": 10
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/PreToolUse-cached-prefix-write-gate.py"
+            "command": "python3",
+            "args": [
+              "-I",
+              "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/PreToolUse-cached-prefix-write-gate.py"
+            ],
+            "onFailure": "block",
+            "timeout": 10
           }
         ]
       }
@@ -132,7 +192,6 @@
       }
     ]
   },
-
   "enabledPlugins": {
     "_documentation": [
       "Phase 4 calibrated minimum. The harness reference enables two plugins:",
@@ -146,7 +205,6 @@
     "superpowers@claude-plugins-official": true,
     "mempalace@mempalace": true
   },
-
   "mcpServers": {
     "_documentation": [
       "Empty by default. Phase 4's enabledPlugins above carries the calibrated",
@@ -160,7 +218,6 @@
       "assembly time per mac/harness/rules/mcp-deny-server-prefix-default.md."
     ]
   },
-
   "model": {
     "_documentation": [
       "Phase 0 decisions. Same-family parent/subagent share cache per QC.4a.",
@@ -169,7 +226,6 @@
     "default": "claude-opus-4-7",
     "subagentDefault": "claude-opus-4-7"
   },
-
   "sandbox": {
     "_documentation": [
       "Disabled. Claude Code v2.1.138 exposes no sandbox CLI flag; the",
@@ -182,7 +238,6 @@
     "enabled": false,
     "excludePatterns": []
   },
-
   "cache_control": {
     "_documentation": [
       "Direct API/SDK cache discipline per QC.4a. The 1h TTL is required for",
@@ -192,7 +247,6 @@
     "ttl": "1h",
     "telemetry": true
   },
-
   "logging": {
     "_documentation": [
       "Session log path is fixed by Claude Code per project; the cwd is encoded",
@@ -202,5 +256,6 @@
     ],
     "sessionLogPath": "~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl",
     "retentionDays": 90
-  }
+  },
+  "_claude_code_hook_onfailure_floor": "2.1.295: onFailure: block on command hooks. Below this version the four destructive-class hooks fail open on a hook error."
 }
