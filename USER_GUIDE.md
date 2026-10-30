@@ -94,7 +94,7 @@ pre-commit run --all-files
 shellcheck harness/hooks/*.sh
 ```
 
-If both pass, the harness is adopted. Open the project in Claude Code and start a session.
+If both pass, the harness is adopted. Open the project in Claude Code and start a session. The first session reports the new `.claude/settings.json` as unaudited. Add its SHA-256 to `~/.claude/audited-hashes.json` with a note, as the message instructs, so later sessions start clean.
 
 ## What to expect during a session
 
@@ -109,6 +109,20 @@ While you write code, the post-tool-use Semgrep hook runs after every Write or E
 Expect to see hook output occasionally as you work. That is the system working. If you never see hook output, either the hook is misconfigured (run `./scripts/drift-check.sh`) or your code is squeaky clean (rare).
 
 When you commit, the pre-commit hooks run the full SAST stack. If anything fails, the commit is blocked. Fix the findings, re-stage, re-commit.
+
+## What gets blocked, asked, and allowed
+
+Most of the time the harness is invisible. Three kinds of action make it visible, and knowing which is which saves a debugging session.
+
+**Allowed without a prompt.** Reads anywhere. Writes inside the working directory. Writes to scratch space: `/tmp`, `$TMPDIR`, and on macOS the per-user temp directory under `/var/folders/.../T`, which is where Claude Code's own scratchpad and most tool output land. Writes to Claude's auto-memory and plan files. Writes to ordinary source in any other git repository on disk. Deletes of children of protected paths, such as `rm -rf build` or `rm -rf /tmp/x`.
+
+**Asked.** A write outside all of the above, such as `~/Documents/notes.txt`. A write to a file that loads or runs in a later session: any `.claude/` directory, `.mcp.json`, `CLAUDE.md`, a hook script, anything under `.git`, even when it sits under `/tmp`. A write to `/var/tmp` or to the rest of `/private`. A force push. A write to a `CLAUDE.md` or `foundation/` file in this repository (the cached-prefix gate). An unpinned package install or a `curl | sh` pattern, unless `HARNESS_AUTONOMOUS_MODE=1` silences it.
+
+**Blocked outright.** `rm -rf` (any recursive or glob form) against the filesystem root, any top-level directory such as `/usr` or `/tmp`, any home directory, a mounted volume, the working directory or one of its parents, or a credential store such as `~/.ssh`. Any `rm` at all under `~/.ssh`, `~/.gnupg`, `~/.aws`, or of the harness's own hooks and settings. Writes to `.env` files, `secrets/` directories, `/etc`, and `~/.ssh`. `sudo`. More than 30 chained subcommands in one Bash call (49 under the autonomous flag). A deny shows up in the transcript as a hook message naming the resolved path and the rule document that explains it.
+
+The line between "asked" and "blocked" is reversibility. Anything the harness can recover from version control or that the OS cleans up on its own passes. Anything that needs a human judgment call asks. Anything with no legitimate use case is denied, and the denial holds in every permission mode, including `--dangerously-skip-permissions`, unless hooks are disabled in a settings file or the session runs with `--bare`.
+
+Two things still prompt in bypass mode and are not the harness. Claude Code's own critical-path check prompts (with a two-minute countdown in a terminal) on `rm` of the working directory or of a `"$VAR"/*` shape such as `rm -rf "$TMPDIR"/*`. Spell the target out, `rm -rf /tmp/build`, and it passes. The `AskUserQuestion` tool always prompts, by design.
 
 ## How the security-review skill loads
 
@@ -127,6 +141,8 @@ You will not see the skill content in your session output. It is loaded into Cla
 | `pre-commit run --files <path>` | Run pre-commit against a specific file |
 | `tail -f ~/.claude-harness/hook.log` | Watch hook activity in real time |
 | `tail -f ~/.claude-harness/shell-audit.log` | Watch shell command activity |
+| `python3 -I harness/hooks/tests/test_external_write_gate.py harness/hooks/PreToolUse-external-write-gate.py` | Prove the write gate still decides every case the way the docs say |
+| `python3 -I harness/hooks/tests/test_bash_deny_rm_protected_paths.py harness/hooks/PreToolUse-bash-deny-rm-protected-paths.py` | Prove the rm deny still catches every reproduced bypass |
 
 ## Troubleshooting
 
@@ -144,17 +160,23 @@ You will not see the skill content in your session output. It is loaded into Cla
 
 **Semgrep on Windows misses a rule pack you expected.** Switch to WSL2 per the Windows ARCHITECTURE.md decision. The native Windows binary has spotty rule-pack coverage as of build time.
 
+**Claude says a command was "Denied by PreToolUse-bash-deny-rm-protected-paths".** The target resolved to a protected path. The message names the resolved path and why it is protected. Name a child path instead (`rm -rf /tmp/build` rather than `rm -rf /tmp`, `rm -rf ./*` rather than `rm -rf .`). If the command was a `cd` followed by a relative `rm`, the hook resolved the relative target against the directory you changed into. If you believe the deny is wrong, the full case list is in `harness/hooks/tests/test_bash_deny_rm_protected_paths.py` and the rationale in `harness/rules/bash-deny-rm-rf-root.md`.
+
+**A write to `/tmp` or the per-user temp directory prompted.** First check the path. `/var/tmp`, a `.claude` directory under `/tmp`, and anything under `/private` other than `/private/tmp` and the per-user `T/` tree are supposed to prompt. If the path is a plain file under `/tmp`, run the write-gate matrix from the daily commands table. If it passes, the deployed hook under `~/.claude/hooks/` differs from the tracked source. Run `./scripts/drift-check.sh`.
+
+**Every Bash, Write, or Edit call fails with a hook error.** One of the four fail-closed hooks cannot start. Run `python3 -I ~/.claude/hooks/PreToolUse-bash-deny-rm-protected-paths.py < /dev/null`. It should print a "payload is not JSON" line and exit 2. If `python3` is not found, the hook registrations resolve it through PATH and the session was launched from an environment without it. Fix PATH where the session launches. This is AP.8 working as designed: a dead gate blocks rather than silently allows.
+
 **The cache cost on direct API calls jumped after a Claude Code update.** Check whether telemetry got disabled or the cache TTL default changed. The March 2026 regression is the canonical example. Set `cache_control.ttl` to `"1h"` explicitly in your API calls per QC.4a.
 
 ## Customizing the harness for your project
 
 The harness ships with defaults that work for most projects. Customize through commits with rationale.
 
-To add a new rule, edit `harness/rules/paths.deny` or `commands.deny`. The change applies on the next session.
+To add a new permission rule, add it to the `permissions` block of `.claude/settings.json` and write a rationale document beside the others in `harness/rules/`. Use `Edit(path)` for anything that writes files (`Write(path)` rules are accepted and never match) and `Read(path)` for reads. For Bash, remember that `:*` is a trailing space-wildcard, so `Bash(rm -rf /:*)` matches `rm -rf /` and nothing under it. If the rule needs to tell a directory from its children, it is a hook, not a rule. The legacy `paths.deny` and `commands.deny` files are consulted by the shell-audit hook and stay as documentation of intent.
 
 To add a new security pattern, create a file in `harness/skills/security-review/patterns/`. Add the entry to `SKILL.md` mapping the pattern to file types. The pattern loads on demand the next time a covered file is touched.
 
-To add a new hook, write the script in `harness/hooks/`. Register it in `.claude/settings.json`. Add an entry to `harness/hooks/README.md` and trace it to a Quality Contract property.
+To add a new hook, write the script in `harness/hooks/`. Register it in `.claude/settings.json`, and if it is a gate whose failure must block, add `"onFailure": "block"` and invoke it as `python3 -I <path>` so an interpreter problem cannot turn the gate into an allow. Add an entry to `harness/hooks/README.md`, a test matrix under `harness/hooks/tests/` if it makes decisions, and trace it to a Quality Contract property.
 
 To remove a layer of the security stack, file an issue with rationale. The three-layer composition is binding per AP.2. Removing a layer needs an explicit replacement that covers the same threats.
 

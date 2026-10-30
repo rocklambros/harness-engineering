@@ -74,6 +74,8 @@ Commit-time hardening runs Semgrep on changed files after every Write or Edit th
 
 Post-generation validation runs the pinned pre-commit gate: the baseline pre-commit hooks, gitleaks for secrets, Semgrep for SAST, shellcheck for hook scripts, and the local drift check for reference integrity. The secondary supply-chain scanners (trivy, syft, grype) are evaluated and documented as optional in each platform's `evaluations/deep-eval.md`, not part of the pinned gate. Same Semgrep engine as the commit-time hook, different invocation context, redundancy by design.
 
+Underneath the three layers sit two deterministic gates that decide before any model judgment. The external-write gate prompts on writes outside the recoverable set (the working directory, OS-cleaned scratch space, Claude's own managed stores, and ordinary source in any git repository on disk) and never exempts files that load or run in a later session. The rm protected-paths deny refuses recursive removal of the filesystem root, top-level directories, homes, mounted volumes, and the working directory, and any removal under a credential store or of the harness's own enforcement files, in every permission mode including bypass, and resolves `cd` chains, wrappers, globs, substitutions, here-strings, pipes into a shell, and inline scripts the way the shell would. Both register fail-closed and ship with a committed test matrix. `HARNESS_GUIDE.md` has the full decision tables.
+
 The reasoning for this layout is in `foundation/01-threat-model.md` and the Quality Contract section QC.1.
 
 ## Attribution
