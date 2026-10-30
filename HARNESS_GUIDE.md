@@ -69,7 +69,7 @@ The phase prompts in `{platform}/prompts/` are runnable Claude Code instructions
 
 ## Hook event coverage
 
-The Mac reference build registers hooks on five Claude Code events. The adopter template `mac/harness/settings.json.template` and the Jetson template carry the same registrations with `{{REPO_ROOT}}` paths. Windows is a scaffold that registers none (see `windows/ARCHITECTURE.md`).
+The Mac reference build registers hooks on six Claude Code events. The adopter template `mac/harness/settings.json.template` and the Jetson template carry the same registrations with `{{REPO_ROOT}}` paths. Windows is a scaffold that registers none (see `windows/ARCHITECTURE.md`).
 
 `PreToolUse` on Bash fires five hooks in order: `PreToolUse-bash-cap-subcommands.py` (deny above 30 chained subcommands), `PreToolUse-supply-chain-bash-checks.py` (ask on unpinned installs and `curl|sh`), `PreToolUse-git-push-force-ask.py` (ask on force pushes), `PreToolUse-bash-deny-rm-protected-paths.py` (deny recursive removal of protected paths), and on the Mac reference build `PreToolUse-no-ai-attribution.sh` (deny AI attribution in commit text). The template also runs `pre-tool-use-shell-audit.sh` first for audit logging.
 
@@ -83,11 +83,13 @@ The Mac reference build registers hooks on five Claude Code events. The adopter 
 
 `PreCompact` fires `pre-compact-preserve.sh` to preserve active phase state across compaction.
 
+`ConfigChange` on `project_settings` and `local_settings` fires `ConfigChange-audit-claude-config.py`, which blocks an in-repo settings change from taking effect until its hash is in the audited-hash registry. This is the event that can block, where SessionStart can only flag, so a `disableAllHooks: true` written into `.claude/settings.json` during a session never applies.
+
 Coverage is informed by the Liu et al. reverse engineering of Claude Code v2.1.x (R.1.1), which enumerates 12-21 events depending on count method. The events registered here are the ones with explicit harness dependencies.
 
 ### Which hooks fail closed
 
-Claude Code treats a hook that cannot start, times out, exits with a code other than 0 or 2, or prints invalid JSON as a non-blocking error: the action goes ahead unless the registration sets `"onFailure": "block"`, a key that exists from 2.1.295. The harness applies that flag to its four destructive-class hooks (the write gate, the cached-prefix gate, the force-push gate, and the rm deny), runs them under `python3 -I` so nothing in the hooks directory or on `PYTHONPATH` can shadow the standard library, and the two newest also exit 2 on any internal error. Every other hook fails open on purpose. A stalled Semgrep run or a supply-chain false positive costs a re-run. A stalled destructive gate must cost a block. The version floor is recorded as `_claude_code_hook_onfailure_floor` in `settings.json` for the QC.5 re-evaluation on a minor bump.
+Claude Code treats a hook that cannot start, times out, exits with a code other than 0 or 2, or prints invalid JSON as a non-blocking error: the action goes ahead unless the registration sets `"onFailure": "block"`, a key that exists from 2.1.295. The harness applies that flag to its five destructive-class hooks (the write gate, the cached-prefix gate, the force-push gate, the rm deny, and the ConfigChange audit), runs them in exec form under `python3 -I` with a 10 second timeout so nothing in the hooks directory or on `PYTHONPATH` can shadow the standard library and a hung mount cannot hold a call, and the three newest also exit 2 on any internal error. Drift check 6 (`scripts/check-hook-registrations.py`) proves every source registers the same harness hooks with these settings. Every other hook fails open on purpose. A stalled Semgrep run or a supply-chain false positive costs a re-run. A stalled destructive gate must cost a block. The version floor is recorded as `_claude_code_hook_onfailure_floor` in `settings.json` for the QC.5 re-evaluation on a minor bump.
 
 ## The deterministic gates
 
@@ -120,6 +122,15 @@ Four forms pass on purpose. The glob of a scratch root (`rm -rf /tmp/*`) is clea
 The rule layer keeps the bare spellings as a floor (`Bash(rm -rf /:*)`, `Bash(rm -rf ~)`, `Bash(rm -rf $HOME:*)`, `Bash(rm -rf /Users:*)`, and their variants) because a deny rule costs nothing and holds even if the hook is removed. The rationale and the full protected set are in `mac/harness/rules/bash-deny-rm-rf-root.md`.
 
 Claude Code's own critical-path check still runs behind the hook. It prompts with a two-minute countdown in a terminal under `auto` and `bypassPermissions`, denies in the Desktop app unless a `PermissionRequest` hook allows, and covers the root, every top-level directory, home, and the working directory with its parents. The hook exists because a prompt is not a deny, because the native set does not include `/private/<name>`, credential stores, or the config root, because the native parser does not read `eval`, here-strings, or pipes into a shell, and because the native check applies to `rm` and `rmdir` only, so `mv`, `unlink`, `shred`, and `find -delete` have no native backstop.
+
+### Unattended runs
+
+Claude Code states that `--bare`, which skips hook discovery, will become the default for `-p` runs. A scheduled or scripted session that relied on auto-discovery would then start with no gates. `scripts/claude-unattended.sh` is the launcher for those runs: it checks `claude --version` against the fail-closed floor and the pinned minor range, confirms the settings file registers every destructive-class hook with `onFailure: block`, runs each gate once on empty input to prove the interpreter and the script start, and then executes `claude -p --settings ~/.claude/settings.json` with the arguments you passed. A precondition failure exits 2 before anything runs, which is the cheap failure. The expensive one, a dead gate blocking every call, is what the probe prevents.
+
+```bash
+scripts/claude-unattended.sh "Summarize the open issues" --permission-mode default
+HARNESS_SETTINGS=/path/to/settings.json scripts/claude-unattended.sh "..."
+```
 
 ### Rolling back a gate
 
