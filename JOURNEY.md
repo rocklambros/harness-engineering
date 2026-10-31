@@ -92,6 +92,22 @@ The scoping it replaces lasted a day. It was added after an adversarial premorte
 
 ---
 
+## October 31, 2026: Gate decisions after the rm-deny hardening
+
+Three adversarial rounds against the rm protected-paths deny ended without convergence, and the review around them raised five operator decisions. Four are settled and one is deferred.
+
+The subcommand cap now fails closed. Its hard cap of 49 is the floor below which per-subcommand deny rules keep firing, so a cap that errors open removes the floor it exists to hold. It registers like the five destructive-class gates, under `python3 -I` with `onFailure: block` and a 10 second timeout, and exits 2 on a bad payload or an internal error. Drift check 6 and `scripts/claude-unattended.sh` now count six fail-closed hooks.
+
+Autonomous mode no longer silences curl or wget piped into a shell. That pattern runs whatever the server sends, which the bypass log can record but not undo. The other supply-chain prompts stay silenceable.
+
+Auto-update stays on. Upstream security fixes land without operator action, and the cost is a window where a minor bump runs before the QC.5 re-evaluation. `session-start.sh` warns and the unattended launcher refuses outside the pin, which starts that re-evaluation.
+
+The six fail-closed gates move into managed settings through `scripts/install-managed-gates.sh`. Hooks and scripts under `~/.claude` belong to the agent's own user, so one Bash write could replace a gate or set `disableAllHooks`. Managed hooks cannot be disabled from user, project, or local settings, and the root-owned copies cannot be rewritten without root. The installer leaves `allowManagedHooksOnly` off, since it would also block plugin hooks such as claude-mem. Root is needed, so each host stays open until the operator runs it.
+
+Deferred: the subcommand cap counts heredoc body lines, so a heredoc over 49 lines is denied. It stays until someone confirms whether Claude Code counts those lines toward its own 50-subcommand limit, because the cap tracks that limit and fails safe in the meantime.
+
+---
+
 
 ## Template for future entries
 
