@@ -202,7 +202,6 @@ CASES = [
     ("mv build build.old", PROJ, ALLOW, None),
     ("mv ~/Downloads/x.zip /tmp/", PROJ, ALLOW, None),
     ("for d in build dist; do rm -rf $d; done", PROJ, ALLOW, None),
-    ('rm -rf "$TMPDIR"/x', PROJ, ALLOW, None),
     ('rm -rf "$PWD"/build', PROJ, ALLOW, None),
     (f"rm -rf {CONFIG}/projects/-x-y/memory", PROJ, ALLOW, None),
     (f"rm -rf {CONFIG}/shell-snapshots", PROJ, ALLOW, None),
@@ -248,7 +247,6 @@ CASES = [
     ("rm -f ~/.zcompdump", PROJ, ALLOW, None),
     ("rm /usr", PROJ, ALLOW, None),
     ("rm -rf $DIR/*", PROJ, DENY, None),
-    ('rm -rf "$TMPDIR"/x', PROJ, ALLOW, None),
     ("rm -rf -v -- ./out", PROJ, ALLOW, None),
     ("rm -rf ~otheruser/proj/build", PROJ, ALLOW, None),
     ("ls -la ~", PROJ, ALLOW, None),
@@ -265,6 +263,18 @@ CASES = [
     ("xargs rm -rf < list.txt", PROJ, ALLOW, None),
     ("rm -rf '/tmp/has space'", PROJ, ALLOW, None),
     ("echo it's fine && rm -rf /tmp/y", PROJ, ALLOW, None),
+]
+
+
+# Cases whose verdict depends on the hook's environment, run with that
+# environment pinned so the result does not depend on the shell running the
+# matrix. A None value removes the variable. With $TMPDIR unset the shell
+# expands "$TMPDIR"/x to /x, a top-level directory, so DENY is correct there
+# and the hook must not substitute a default. macOS launchd and Desktop-app
+# sessions and stock Linux shells all start without $TMPDIR.
+ENV_CASES = [
+    ('rm -rf "$TMPDIR"/x', PROJ, ALLOW, {"TMPDIR": "/tmp"}),
+    ('rm -rf "$TMPDIR"/x', PROJ, DENY, {"TMPDIR": None}),
 ]
 
 
@@ -285,12 +295,22 @@ KNOWN_GAPS = [
 ]
 
 
-def run_case(cmd, cwd):
+def run_case(cmd, cwd, env_overrides=None):
     payload = json.dumps(
         {"tool_name": "Bash", "tool_input": {"command": cmd}, "cwd": cwd}
     )
+    env = dict(os.environ)
+    for name, value in (env_overrides or {}).items():
+        if value is None:
+            env.pop(name, None)
+        else:
+            env[name] = value
     r = subprocess.run(
-        [sys.executable, "-I", HOOK], input=payload, capture_output=True, text=True
+        [sys.executable, "-I", HOOK],
+        input=payload,
+        capture_output=True,
+        text=True,
+        env=env,
     )
     return r.returncode, r.stdout, r.stderr
 
@@ -298,11 +318,13 @@ def run_case(cmd, cwd):
 def main() -> int:
     fails = 0
     skipped = 0
-    for cmd, cwd, expect_deny, platform in CASES:
+    cases = [(c, w, e, p, None) for c, w, e, p in CASES]
+    cases += [(c, w, e, None, env) for c, w, e, env in ENV_CASES]
+    for cmd, cwd, expect_deny, platform, env_overrides in cases:
         if platform and sys.platform != platform:
             skipped += 1
             continue
-        code, out, err = run_case(cmd, cwd)
+        code, out, err = run_case(cmd, cwd, env_overrides)
         denied = (
             code == 2 and "Denied by PreToolUse-bash-deny-rm-protected-paths" in err
         )
@@ -312,7 +334,8 @@ def main() -> int:
             fails += 1
         tag = "ok  " if ok else "FAIL"
         verdict = "DENY " if denied else ("allow" if clean_allow else f"exit={code}")
-        print(f"{tag} {verdict} {cmd!r} cwd={cwd.replace(HOME, '~')}")
+        pinned = f" env={env_overrides}" if env_overrides else ""
+        print(f"{tag} {verdict} {cmd!r} cwd={cwd.replace(HOME, '~')}{pinned}")
     # Fail-closed paths: a non-JSON payload and a crash both exit 2.
     r = subprocess.run(
         [sys.executable, "-I", HOOK], input="not json", capture_output=True, text=True
@@ -343,7 +366,7 @@ def main() -> int:
             print(
                 f"NOTE {cmd!r} no longer passes silently (exit={code}); update KNOWN_GAPS"
             )
-    total = len(CASES) - skipped + 2
+    total = len(cases) - skipped + 2
     print(
         f"\n{total - fails}/{total} cases as expected ({skipped} platform-specific cases skipped, {gaps} known gaps)"
     )
