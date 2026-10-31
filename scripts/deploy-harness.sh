@@ -4,7 +4,9 @@
 # Copies hook scripts byte-for-byte into ~/.claude/hooks/. Renders the
 # platform settings template (substituting {{REPO_ROOT}}) and diffs the
 # hooks block against the deployed ~/.claude/settings.json so the operator
-# can apply the change manually. Records the checkout path in
+# can apply the change manually. Gates already registered in root-owned
+# managed settings are left out of that diff, since the user file must not
+# carry them a second time. Records the checkout path in
 # ~/.claude/harness-repo-root so the deployed session-start.sh can find
 # scripts/drift-check.sh. Does NOT overwrite settings.json: the
 # deployed copy typically carries operator personalizations (model
@@ -233,8 +235,8 @@ else
   # Compare only the hooks block since the template owns hook registrations.
   # Other top-level keys (permissions, model, env, plugins, mcpServers) may
   # carry operator personalizations the template should not touch.
-  python3 - <<PY
-import json, sys, difflib
+  python3 -I - <<PY
+import importlib.util, json, sys, difflib
 with open("$substituted") as f:
     sub = json.load(f)
 with open("$DEPLOYED_SETTINGS") as f:
@@ -242,6 +244,41 @@ with open("$DEPLOYED_SETTINGS") as f:
 def events(h):
     # _documentation and _comment_* keys inside hooks are prose, not events.
     return {k: v for k, v in h.items() if not k.startswith("_")}
+
+# A gate that root-owned managed settings already register belongs out of
+# the user file, where it would run twice (operator decision, October 31,
+# 2026). Strip those from the template side so the diff stops asking the
+# operator to add them back. The registration checker owns the managed-file
+# lookup, so load it rather than keep a second copy of that logic.
+spec = importlib.util.spec_from_file_location(
+    "chr", "$REPO_ROOT/scripts/check-hook-registrations.py")
+chr_mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(chr_mod)
+try:
+    managed = chr_mod.managed_registrations()
+except (OSError, json.JSONDecodeError) as exc:
+    print(f"  ERROR: cannot read managed settings: {exc}", file=sys.stderr)
+    sys.exit(2)
+skipped = []
+for event, groups in events(sub.get("hooks", {})).items():
+    for group in groups:
+        matcher = group.get("matcher") or "*"
+        kept = []
+        for entry in group.get("hooks", []):
+            name = chr_mod.basename_of(entry)
+            if (event, matcher, name) in managed:
+                skipped.append(f"{name} on {event} ({matcher})")
+            else:
+                kept.append(entry)
+        group["hooks"] = kept
+    sub["hooks"][event] = [g for g in groups if g.get("hooks")]
+    if not sub["hooks"][event]:
+        del sub["hooks"][event]
+if skipped:
+    print(f"  managed settings in {chr_mod.MANAGED_DIR} own {len(skipped)} gate(s),")
+    print("  left out of the user hooks block:")
+    for s in skipped:
+        print(f"    {s}")
 sub_hooks = json.dumps(events(sub.get("hooks", {})), indent=2, sort_keys=True)
 dep_hooks = json.dumps(events(dep.get("hooks", {})), indent=2, sort_keys=True)
 if sub_hooks == dep_hooks:
