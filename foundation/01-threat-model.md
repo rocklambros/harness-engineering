@@ -92,6 +92,8 @@ Secret scanning at pre-commit catches cases where secrets leak into committed CL
 
 The CLAUDE.md hierarchy size limit (under 400 lines, target 250) keeps the cached prefix small enough to audit visually.
 
+Accepted residual, October 31, 2026 (cross-project auto-memory): `PreToolUse-external-write-gate.py` exempts Markdown files in any project's `~/.claude/projects/<project>/memory/` directory, not only the session's own. A memory file is read into that project's next session, so an injected write there is a cross-session persistence path, which is the T.3 harm. The operator accepts it because cross-repo work (master's program coursework, the cxbom repositories) writes a sibling project's memory as a matter of course, and a prompt on ordinary work trains the reflexive approval the gate exists to prevent. The exemption is bounded three ways. Markdown only, so a script or binary dropped in a memory directory still asks. The `memory/` segment only, so transcripts and other files under a project directory still ask. Resolved paths only, so a symlink planted under `memory/` cannot carry the exemption into `hooks/`. A same-day predecessor scoped this to the current project and was withdrawn after it prompted on every memory write under a path containing an underscore.
+
 ### T.4 Hook bypass through subcommand or alternate-path execution
 
 Attacker: a malicious actor with prompt-injection footing in the agent.

@@ -75,6 +75,14 @@ The test matrix missed it because its working directory was a single plain word,
 
 ---
 
+## October 31, 2026: Cross-project auto-memory writes stop prompting
+
+The auto-memory exemption now covers Markdown files in any project's memory directory, not only the session's own. The operator works across repositories as a matter of course, the master's program coursework and the cxbom pair being the standing examples, so a memory write for a sibling project is ordinary work rather than a signal. Gating it produced a prompt on that ordinary work, which is how the reflexive approval the gate exists to prevent gets trained.
+
+The scoping it replaces lasted a day. It was added after an adversarial premortem observed that a memory file is read into that project's next session, so an injected write there persists across sessions. That harm is real and is now recorded as an accepted residual under T.3 rather than mitigated. Three bounds keep it narrow. Markdown only, which is the same scope Claude Code gives its own protected-path exception for these directories and which leaves a dropped script asking. The `memory/` segment only, so a transcript or a stray file under a project directory still asks. Resolved paths only, so a symlink planted under `memory/` cannot carry the exemption into `hooks/`.
+
+---
+
 
 ## Template for future entries
 
