@@ -32,6 +32,11 @@ Verify (autonomous, 31-49 allowed, >=50 still denied):
     # A 60-chain still denies: HARD_CAP=49 binds because Adversa.ai 2026
     # documents per-subcommand deny-rule checks stop firing above 50.
 
+Failure handling: a payload that is not JSON or any exception exits 2
+(block). Since October 31, 2026 this hook is destructive class: the
+registration runs it under python3 -I with onFailure: block and a 10
+second timeout, because the hard cap is a floor, not advice.
+
 Owner: harness-engineering (Phase 3, 2026-05-11; autonomous-mode bypass 2026-05-20)
 """
 import json
@@ -138,8 +143,11 @@ def autonomous_bypass(tool_name: str, command: str,
 def main() -> int:
     try:
         data = json.load(sys.stdin)
-    except json.JSONDecodeError:
-        return 0
+    except json.JSONDecodeError as exc:
+        sys.stderr.write(
+            f"PreToolUse-bash-cap-subcommands: payload is not JSON ({exc}). Blocked per AP.8.\n"
+        )
+        return 2
     if data.get("tool_name") != "Bash":
         return 0
     cmd = data.get("tool_input", {}).get("command", "")
@@ -173,4 +181,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as exc:  # noqa: BLE001  fail closed per AP.8
+        sys.stderr.write(
+            f"PreToolUse-bash-cap-subcommands failed: {exc!r}. Blocked per AP.8.\n"
+        )
+        sys.exit(2)

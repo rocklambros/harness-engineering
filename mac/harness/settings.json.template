@@ -88,7 +88,13 @@
           },
           {
             "type": "command",
-            "command": "{{REPO_ROOT}}/harness/hooks/PreToolUse-bash-cap-subcommands.py"
+            "command": "python3",
+            "args": [
+              "-I",
+              "{{REPO_ROOT}}/harness/hooks/PreToolUse-bash-cap-subcommands.py"
+            ],
+            "onFailure": "block",
+            "timeout": 10
           },
           {
             "type": "command",

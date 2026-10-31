@@ -101,7 +101,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/PreToolUse-bash-cap-subcommands.py"
+            "command": "python3",
+            "args": [
+              "-I",
+              "${CLAUDE_PROJECT_DIR}/mac/harness/hooks/PreToolUse-bash-cap-subcommands.py"
+            ],
+            "onFailure": "block",
+            "timeout": 10
           },
           {
             "type": "command",

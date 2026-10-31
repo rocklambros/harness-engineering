@@ -33,6 +33,7 @@ GATES=(
   PreToolUse-cached-prefix-write-gate.py
   PreToolUse-git-push-force-ask.py
   ConfigChange-audit-claude-config.py
+  PreToolUse-bash-cap-subcommands.py
 )
 
 fail() { echo "claude-unattended: $*" >&2; exit 2; }

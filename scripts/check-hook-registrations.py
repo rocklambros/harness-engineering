@@ -6,7 +6,7 @@ Compares the hooks registered in the Mac reference file
 (mac/harness/settings.json.template), and the live user settings
 (~/.claude/settings.json, when present) as sets of
 (event, matcher, hook basename). Each source is allowed a documented set of
-extras; anything else that differs is drift. The five destructive-class
+extras; anything else that differs is drift. The six fail-closed
 hooks must carry onFailure: block, the exec form under python3 -I, and a
 timeout, in every source that registers them.
 
@@ -76,6 +76,9 @@ DESTRUCTIVE = {
     "PreToolUse-git-push-force-ask.py",
     "PreToolUse-bash-deny-rm-protected-paths.py",
     "ConfigChange-audit-claude-config.py",
+    # Not destructive itself, but its hard cap is the floor that keeps
+    # per-subcommand deny rules firing (operator decision, October 31, 2026).
+    "PreToolUse-bash-cap-subcommands.py",
 }
 
 
