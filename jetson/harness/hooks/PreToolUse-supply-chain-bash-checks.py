@@ -126,6 +126,7 @@ def find_violation(cmd: str):
 # hooks (git push --force, external-write-gate, cached-prefix-write-gate,
 # SessionStart-audit) do NOT honor the flag.
 _BYPASS_LOG = os.path.expanduser("~/.claude/logs/autonomous-bypass.log")
+_NEVER_SILENCED = {"network content piped directly into a shell"}
 _BYPASS_LOG_MAX = 1 << 20  # 1 MiB, single .1 backup on rotate
 
 
@@ -198,7 +199,10 @@ def main() -> int:
     label = find_violation(cmd)
     if label is None:
         return 0
-    if autonomous_bypass(
+    # Network content piped into a shell runs whatever the server sends,
+    # so autonomous mode never silences it (operator decision, October 31,
+    # 2026). The other supply-chain prompts stay silenceable.
+    if label not in _NEVER_SILENCED and autonomous_bypass(
         tool_name="Bash",
         command=cmd,
         hook_name="PreToolUse-supply-chain-bash-checks",

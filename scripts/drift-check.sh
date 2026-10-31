@@ -267,7 +267,7 @@ check_deployed_hooks() {
 # Check 5 proves the hook files match. This proves the registrations do: the
 # same harness hooks on the same events in mac/harness/settings.json, the
 # adopter template, and the live ~/.claude/settings.json, each allowed only
-# its documented extras, and the five destructive-class hooks registered
+# its documented extras, and the six fail-closed hooks registered
 # fail-closed everywhere. A hook that exists on disk but is registered in
 # one source and not another is the drift the October 30, 2026 premortem
 # found and this check closes.

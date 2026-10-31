@@ -2,7 +2,7 @@
 
 The deterministic enforcement scripts that Claude Code invokes on specific events. Hooks are the highest-confidence policy enforcement surface in the harness. Per AP.1, anything that must not be bypassed lives here, not in CLAUDE.md.
 
-Hooks fail closed per AP.8 where the registration says so, and nowhere else. Claude Code treats a hook that cannot start, times out, exits with a code other than 0 or 2, or prints invalid JSON as a non-blocking error unless the registration sets `onFailure: "block"`, a key that exists from 2.1.295. The five destructive-class hooks (`PreToolUse-external-write-gate.py`, `PreToolUse-cached-prefix-write-gate.py`, `PreToolUse-git-push-force-ask.py`, `PreToolUse-bash-deny-rm-protected-paths.py`, `ConfigChange-audit-claude-config.py`) carry that key, run under `python3 -I` so a planted module in the hooks directory or a `PYTHONPATH` entry cannot shadow the standard library, and the three newest also exit 2 on any internal error, so both halves of the failure surface block. The advisory and noisy hooks (shell audit, Semgrep feedback, subcommand cap, supply-chain checks, session-start audits, log pruning) fail open by design: a false positive there costs a re-run, while a stall there would wedge every tool call.
+Hooks fail closed per AP.8 where the registration says so, and nowhere else. Claude Code treats a hook that cannot start, times out, exits with a code other than 0 or 2, or prints invalid JSON as a non-blocking error unless the registration sets `onFailure: "block"`, a key that exists from 2.1.295. The five destructive-class hooks (`PreToolUse-external-write-gate.py`, `PreToolUse-cached-prefix-write-gate.py`, `PreToolUse-git-push-force-ask.py`, `PreToolUse-bash-deny-rm-protected-paths.py`, `ConfigChange-audit-claude-config.py`) and the subcommand cap (`PreToolUse-bash-cap-subcommands.py`) carry that key, run under `python3 -I` so a planted module in the hooks directory or a `PYTHONPATH` entry cannot shadow the standard library, and the four newest also exit 2 on any internal error, so both halves of the failure surface block. The advisory and noisy hooks (shell audit, Semgrep feedback, supply-chain checks, session-start audits, log pruning) fail open by design: a false positive there costs a re-run, while a stall there would wedge every tool call.
 
 ## Hooks in this directory
 
@@ -35,7 +35,7 @@ Each hook requires:
 
 `shellcheck` for the drift check verification. Install with `apt install shellcheck`.
 
-If any dependency is missing, the relevant hook exits non-zero with a clear error message. Whether that blocks the action depends on the registration: the five destructive-class hooks block, the rest report and continue.
+If any dependency is missing, the relevant hook exits non-zero with a clear error message. Whether that blocks the action depends on the registration: the five destructive-class hooks and the subcommand cap block, the rest report and continue.
 
 ## Logs
 

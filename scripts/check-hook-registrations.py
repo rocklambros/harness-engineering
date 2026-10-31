@@ -6,10 +6,16 @@ Compares the hooks registered in the Mac reference file
 (mac/harness/settings.json.template), and the live user settings
 (~/.claude/settings.json, when present) as sets of
 (event, matcher, hook basename). Each source is allowed a documented set of
-extras; anything else that differs is drift. The five destructive-class
+extras; anything else that differs is drift. The six fail-closed
 hooks must carry onFailure: block, the exec form under python3 -I, and a
 timeout, in every source that registers them. Every live registration
 must point at a script file that exists.
+
+The live side also reads root-owned managed settings. A hook registered
+there counts as live, must use an absolute interpreter, and must not also
+appear in the user file, where it would run twice.
+
+Run its matrix with python3 -I scripts/tests/test_check_hook_registrations.py.
 
 Exit 0 when the sets agree, 1 on drift, 2 on a script error. Called from
 scripts/drift-check.sh.
@@ -40,6 +46,16 @@ def _platform() -> str:
 
 
 PLATFORM = _platform()
+# Root-owned managed policy, where scripts/install-managed-gates.sh registers
+# the gates. A gate registered here satisfies the live requirement, and the
+# same gate also in the user file is drift, since it runs twice for no added
+# protection (operator decision, October 31, 2026). HARNESS_MANAGED_DIR is a
+# test seam. This check reports, it does not enforce, so redirecting it can
+# hide drift but cannot switch a gate off.
+MANAGED_DIR = os.environ.get("HARNESS_MANAGED_DIR") or {
+    "Darwin": "/Library/Application Support/ClaudeCode",
+    "Windows": r"C:\Program Files\ClaudeCode",
+}.get(platform.system(), "/etc/claude-code")
 REFERENCE = os.path.join(REPO, "mac", "harness", "settings.json")
 TEMPLATE = os.path.join(REPO, PLATFORM, "harness", "settings.json.template")
 
@@ -77,6 +93,9 @@ DESTRUCTIVE = {
     "PreToolUse-git-push-force-ask.py",
     "PreToolUse-bash-deny-rm-protected-paths.py",
     "ConfigChange-audit-claude-config.py",
+    # Not destructive itself, but its hard cap is the floor that keeps
+    # per-subcommand deny rules firing (operator decision, October 31, 2026).
+    "PreToolUse-bash-cap-subcommands.py",
 }
 
 
@@ -123,6 +142,37 @@ def registrations(path: str) -> dict:
     return found
 
 
+def managed_registrations() -> dict:
+    # Same file set Claude Code merges: the base file, then the drop-ins in
+    # name order.
+    paths = [os.path.join(MANAGED_DIR, "managed-settings.json")]
+    dropins = os.path.join(MANAGED_DIR, "managed-settings.d")
+    if os.path.isdir(dropins):
+        paths += [
+            os.path.join(dropins, n)
+            for n in sorted(os.listdir(dropins))
+            if n.endswith(".json")
+        ]
+    found = {}
+    for path in paths:
+        if os.path.isfile(path):
+            found.update(registrations(path))
+    return found
+
+
+def fail_closed_drift(label: str, key: tuple, entry: dict, interpreter_ok) -> list:
+    drift = []
+    if entry.get("onFailure") != "block":
+        drift.append(f"{label}: {key[2]} lacks onFailure: block")
+    if not interpreter_ok(entry.get("command", "")) or "-I" not in (
+        entry.get("args") or []
+    ):
+        drift.append(f"{label}: {key[2]} is not registered as python3 -I (exec form)")
+    if not entry.get("timeout"):
+        drift.append(f"{label}: {key[2]} has no timeout")
+    return drift
+
+
 def main() -> int:
     # The Mac reference file is a Mac source. On the Jetson the template is
     # the only tracked source and the live file is compared against it.
@@ -139,6 +189,37 @@ def main() -> int:
             print(f"error: cannot read {path}: {exc}", file=sys.stderr)
             return 2
     drift = []
+    managed = {}
+    if "live" in regs:
+        try:
+            managed = managed_registrations()
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"error: cannot read managed settings: {exc}", file=sys.stderr)
+            return 2
+        user = {(k[0], k[2]) for k in regs["live"]}
+        for key in sorted(managed):
+            if (key[0], key[2]) in user:
+                drift.append(
+                    f"{key[2]} on {key[0]} is registered in both managed and user "
+                    f"settings; remove the user copy"
+                )
+        # Managed entries count as live for the template comparison and the
+        # presence check below. Their interpreter rule is checked here: the
+        # installer pins an absolute path so a python3 planted earlier on
+        # PATH cannot run in its place.
+        for key, entry in managed.items():
+            if key[2] in DESTRUCTIVE:
+                drift += fail_closed_drift(
+                    "managed",
+                    key,
+                    entry,
+                    lambda c: os.path.basename(c) == "python3",
+                )
+                if not os.path.isabs(entry.get("command", "")):
+                    drift.append(
+                        f"managed: {key[2]} needs an absolute interpreter path"
+                    )
+        regs["live"] = {**regs["live"], **managed}
     harness_sets = {}
     for label, (_, extras) in sources.items():
         harness_sets[label] = {
@@ -160,17 +241,8 @@ def main() -> int:
                 )
     for label in labels:
         for key, entry in regs[label].items():
-            if key[2] in DESTRUCTIVE:
-                if entry.get("onFailure") != "block":
-                    drift.append(f"{label}: {key[2]} lacks onFailure: block")
-                if entry.get("command") != "python3" or "-I" not in (
-                    entry.get("args") or []
-                ):
-                    drift.append(
-                        f"{label}: {key[2]} is not registered as python3 -I (exec form)"
-                    )
-                if not entry.get("timeout"):
-                    drift.append(f"{label}: {key[2]} has no timeout")
+            if key[2] in DESTRUCTIVE and not (label == "live" and key in managed):
+                drift += fail_closed_drift(label, key, entry, lambda c: c == "python3")
         present = {k[2] for k in regs[label]}
         for name in sorted(DESTRUCTIVE - present):
             drift.append(f"{label}: destructive-class hook {name} is not registered")

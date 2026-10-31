@@ -92,6 +92,34 @@ The scoping it replaces lasted a day. It was added after an adversarial premorte
 
 ---
 
+## October 31, 2026: Gate decisions after the rm-deny hardening
+
+Three adversarial rounds against the rm protected-paths deny ended without convergence, and the review around them raised five operator decisions. Four are settled and one is deferred.
+
+The subcommand cap now fails closed. Its hard cap of 49 is the floor below which per-subcommand deny rules keep firing, so a cap that errors open removes the floor it exists to hold. It registers like the five destructive-class gates, under `python3 -I` with `onFailure: block` and a 10 second timeout, and exits 2 on a bad payload or an internal error. Drift check 6 and `scripts/claude-unattended.sh` now count six fail-closed hooks.
+
+Autonomous mode no longer silences curl or wget piped into a shell. That pattern runs whatever the server sends, which the bypass log can record but not undo. The other supply-chain prompts stay silenceable.
+
+Auto-update stays on. Upstream security fixes land without operator action, and the cost is a window where a minor bump runs before the QC.5 re-evaluation. `session-start.sh` warns and the unattended launcher refuses outside the pin, which starts that re-evaluation.
+
+The six fail-closed gates move into managed settings through `scripts/install-managed-gates.sh`. Hooks and scripts under `~/.claude` belong to the agent's own user, so one Bash write could replace a gate or set `disableAllHooks`. Managed hooks cannot be disabled from user, project, or local settings, and the root-owned copies cannot be rewritten without root. The installer leaves `allowManagedHooksOnly` off, since it would also block plugin hooks such as claude-mem. Root is needed, so each host stays open until the operator runs it.
+
+Deferred: the subcommand cap counts heredoc body lines, so a heredoc over 49 lines is denied. It stays until someone confirms whether Claude Code counts those lines toward its own 50-subcommand limit, because the cap tracks that limit and fails safe in the meantime.
+
+---
+
+## October 31, 2026: Managed gates become the only live copy, and the curl-to-shell floor joins them
+
+A verification pass after the managed install found two gaps. Every fail-closed gate ran twice, once from the managed drop-in and once from `~/.claude/settings.json`. Measured on the Jetson, the three Bash gates cost 82, 69, and 45 ms per call, so each Bash call spent about 200 ms of CPU on copies that add no protection: same code, weaker ownership. The second gap was the supply-chain hook. Its curl-to-shell prompt became a floor autonomous mode cannot lift earlier the same day, and it was left out of the installer because the installer took only the fail-closed class. A user-level edit could still remove it.
+
+The managed drop-in now counts as a registration source. Drift check 6 reads it, requires an absolute interpreter there, and reports a hook registered in both managed and user settings. `scripts/claude-unattended.sh` accepts a gate registered in managed settings when the drop-in and the script it names are root-owned and not group or world writable. It merges those gates into a private copy of the settings file it passes with `--settings`, because `--bare` skips settings hooks and its help text does not say whether managed hooks survive. The installer gains a class field, and the supply-chain hook installs as advisory, keeping its fail-open default so its class does not change. Repo templates keep the user-level registrations, since an adopter without root has no managed layer.
+
+On the Jetson the six user copies are removed. The supply-chain user copy stays until the installer is rerun with root, so the floor is never unregistered in between. Drift check 6 then reports it as a duplicate until it is removed too.
+
+Open: the launcher's managed path and root-ownership rule have no Windows equivalent, and neither does the installer.
+
+---
+
 
 ## Template for future entries
 
