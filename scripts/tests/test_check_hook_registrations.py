@@ -15,10 +15,12 @@ case matches.
 Owner: harness-engineering (October 31, 2026)
 """
 
+import atexit
 import copy
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -55,6 +57,21 @@ FAIL_CLOSED = [
 ADVISORY = [("PreToolUse", "Bash", "PreToolUse-supply-chain-bash-checks.py")]
 MANAGED_NAMES = {g[2] for g in FAIL_CLOSED + ADVISORY}
 
+# The drop-in's hook paths must point somewhere that EXISTS, because the
+# checker reports a registered-but-missing script as drift (commit 7b0eb25).
+# This was the install path /usr/local/lib/claude-harness/hooks, which exists
+# only on a host that has already run install-managed-gates.sh. The suite then
+# passed on the Jetson and reported 5/6 on the Mac, where all seven paths are
+# absent, which contradicts this file's own promise that nothing reads the
+# host's real settings or managed policy. A temporary directory holding the
+# seven names keeps every case meaningful on any host, installed or not.
+# Skipping the case when the path is absent would have hidden the Mac result.
+MANAGED_LIB = tempfile.mkdtemp(prefix="harness-managed-lib-")
+for _name in MANAGED_NAMES:
+    with open(os.path.join(MANAGED_LIB, _name), "w", encoding="utf-8") as _f:
+        _f.write("#!/usr/bin/env python3\n")
+atexit.register(shutil.rmtree, MANAGED_LIB, True)
+
 
 def template():
     with open(TEMPLATE, encoding="utf-8") as f:
@@ -81,7 +98,7 @@ def strip(settings, names):
 
 def dropin(fail_closed_entry=None, python="/usr/bin/python3"):
     """The drop-in install-managed-gates.sh writes, with optional overrides."""
-    lib = "/usr/local/lib/claude-harness/hooks"
+    lib = MANAGED_LIB
     hooks = {}
     for cls, gates in (("fail-closed", FAIL_CLOSED), ("advisory", ADVISORY)):
         for event, matcher, script in gates:
