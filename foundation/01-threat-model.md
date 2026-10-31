@@ -108,7 +108,7 @@ Mitigations:
 
 Hook registrations cover the bypass class by registering on the canonical and alternate event names where they differ.
 
-The four destructive-class hooks fail closed through `onFailure: "block"` and exit 2 on internal error. The advisory hooks fail open by design (see T.7, Fail-closed registration).
+The five destructive-class hooks fail closed through `onFailure: "block"` and exit 2 on internal error. The advisory hooks fail open by design (see T.7, Fail-closed registration).
 
 Hook scripts are themselves SAST-scanned at pre-commit. A hook that's been tampered with should fail the scan.
 
