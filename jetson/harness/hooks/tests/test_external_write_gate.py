@@ -25,7 +25,17 @@ import tempfile
 
 HOOK = sys.argv[1]
 HOME = os.path.abspath(os.path.expanduser("~"))
-CWD = os.path.join(HOME, "proj")
+# A cwd with an underscore and a hyphen in it, because Claude Code rewrites
+# both to hyphens when it names the project directory. The October 30, 2026
+# regression was invisible to a test whose cwd was a single plain word.
+CWD = os.path.join(HOME, "github_projects", "agent-control-standard")
+
+
+def project_dir(path: str) -> str:
+    """Claude Code's project-directory name for a working directory."""
+    return re.sub(r"[^A-Za-z0-9]", "-", path)
+
+
 DARWIN = sys.platform == "darwin"
 TMPDIR = (
     (os.environ.get("TMPDIR", "").rstrip("/") + "/") if os.environ.get("TMPDIR") else ""
@@ -44,12 +54,21 @@ CASES = [
     # inside cwd and managed stores
     (f"{CWD}/src/x.py", ALLOW, {}, None),
     (f"{HOME}/.claude/plans/foo.md", ALLOW, {}, None),
+    (f"{HOME}/.claude/projects/{project_dir(CWD)}/memory/MEMORY.md", ALLOW, {}, None),
     (
-        f"{HOME}/.claude/projects/{re.sub(r'[/.]', '-', CWD)}/memory/MEMORY.md",
+        f"{HOME}/.claude/projects/{project_dir(CWD)}/memory/acs-intake-gate.md",
         ALLOW,
         {},
         None,
     ),
+    # The regression: the underscore in the cwd must already be a hyphen.
+    (
+        f"{HOME}/.claude/projects/{CWD.replace(chr(47), chr(45))}/memory/MEMORY.md",
+        ASK,
+        {},
+        None,
+    ),
+    (f"{HOME}/.claude/projects/{project_dir(CWD)}/notes.txt", ASK, {}, None),
     (f"{HOME}/.claude/projects/-Some-other-project/memory/MEMORY.md", ASK, {}, None),
     # scratch roots, every spelling, with and without $TMPDIR
     ("/tmp/x.txt", ALLOW, {}, None),

@@ -437,8 +437,17 @@ def is_claude_code_managed_store(abs_path: str, home: str, abs_cwd: str) -> bool
         rel = os.path.relpath(real, projects_root)
         parts = rel.split(os.sep)
         # Claude Code names the project directory after the cwd with every
-        # slash and dot replaced by a hyphen.
-        encoded = re.sub(r"[/.]", "-", abs_cwd)
+        # character that is not a letter or a digit replaced by one hyphen,
+        # runs preserved: /Users/x/github_projects/app becomes
+        # -Users-x-github-projects-app, and /Users/x/.claude becomes
+        # -Users-x--claude. Derived October 30, 2026 by comparing every
+        # directory under ~/.claude/projects against a cwd read from its own
+        # transcripts: this rule matched 23 of 23, replacing only slash and
+        # dot matched 6, and collapsing runs matched 19. If a future release
+        # changes the rule, this comparison stops matching and the write
+        # asks, which is the safe direction: a visible prompt, not a silent
+        # exemption for another project's memory.
+        encoded = re.sub(r"[^A-Za-z0-9]", "-", abs_cwd)
         if len(parts) >= 2 and parts[1] == "memory" and parts[0] == encoded:
             return True
     return False
