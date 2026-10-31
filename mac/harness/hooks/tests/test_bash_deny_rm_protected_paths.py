@@ -411,6 +411,42 @@ CASES = [
     ('t="$(mktemp)"; echo x > "$t"; rm -rf "$t"', PROJ, ALLOW, None),
     ("t=$(mktemp -p / -d); rm -rf $t", PROJ, DENY, None),
     ("t=$(mktemp -d); t=~; rm -rf $t/*", PROJ, DENY, None),
+    # round 3: lexer, heredoc, trap, env -S, literals, xargs, remote, alias
+    ("echo x\\ #; rm -rf ~", PROJ, DENY, None),
+    (r"echo x\;#; rm -rf ~", PROJ, DENY, None),
+    ("cat <<'A'B\nhi\nAB\nrm -rf ~\nA", PROJ, DENY, None),
+    ('cat <<"A"B\nhi\nAB\nrm -rf ~\nA', PROJ, DENY, None),
+    ("trap -- 'rm -rf ~' EXIT", PROJ, DENY, None),
+    ("builtin trap 'rm -rf ~' EXIT", PROJ, DENY, None),
+    ("env -S 'rm -rf ${HOME}'", PROJ, DENY, None),
+    ("env --split-string='rm -rf /home/x'", PROJ, DENY, None),
+    ("true ||\nS=/tmp/x; rm -rf $S/*", PROJ, DENY, None),
+    ("echo |\nS=/tmp/x; rm -rf $S/*", PROJ, DENY, None),
+    ("cd; t=$(mktemp -d XXXXXX); rm -rf $t/../*", PROJ, DENY, None),
+    ("t=$(mktemp -d -t run.XXXXXX); rm -rf $t", PROJ, ALLOW, None),
+    ("cd ~ && ls -A | xargs rm -rf", PROJ, DENY, None),
+    ("cat <<EOF | xargs rm -rf\n/home/x\nEOF", PROJ, DENY, None),
+    ("find . -type d -name __pycache__ | xargs rm -rf", PROJ, ALLOW, None),
+    ("find ~ -maxdepth 1 | xargs rm -rf", PROJ, DENY, None),
+    ("flock ssh rm -rf ~", PROJ, DENY, None),
+    ("sudo ssh host rm -rf /tmp/x", PROJ, ALLOW, None),
+    ("alias go='cd /'\ngo\nrm -rf ./*", PROJ, DENY, None),
+    ("docker run --rm -v ~:/w/h alpine rm -rf /w/h", PROJ, DENY, None),
+    ("cd ~; S=/tmp/x/y; (( S = 0 )); rm -rf $S/../*", PROJ, DENY, None),
+    ("tcsh -c 'rm -rf ~'", PROJ, DENY, None),
+    ("cat > /tmp/s <<'EOF'\nrm -rf ~\nEOF\nbash /tmp/s", PROJ, DENY, None),
+    (
+        "cat > /tmp/notes.md <<'EOF'\nrm -rf ~\nEOF\nwc -l /tmp/notes.md",
+        PROJ,
+        ALLOW,
+        None,
+    ),
+    (
+        'git config core.worktree / && cd "$(git rev-parse --show-toplevel)" && rm -rf ./*',
+        PROJ,
+        DENY,
+        None,
+    ),
 ]
 
 
@@ -463,6 +499,7 @@ ENV_CASES = [
     ('builtin source ./env.sh; rm -rf "$TMPDIR"/*', PROJ, DENY, {"TMPDIR": "/tmp"}),
     ('command . ./env.sh; rm -rf "$TMPDIR"/*', PROJ, DENY, {"TMPDIR": "/tmp"}),
     ('if . ./env.sh; then rm -rf "$TMPDIR"/*; fi', PROJ, DENY, {"TMPDIR": "/tmp"}),
+    ("export TMPDIR=~; t=$(mktemp -d); rm -rf $t/../*", PROJ, DENY, {"TMPDIR": "/tmp"}),
 ]
 
 

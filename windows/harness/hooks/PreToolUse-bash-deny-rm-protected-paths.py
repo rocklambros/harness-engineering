@@ -105,7 +105,8 @@ bound by `for X in <literals>` on the same line resolve, plain or with a
 unresolved. A plain reference later in the word (`./$d`, `$S/$x`)
 resolves the same way. In a flat command (no block, loop, or function),
 a name assigned exactly once as its own statement with a literal value
-(`S=/tmp/x`, `D=$S/run-$$`, `t=$(mktemp -d)`) binds where that statement
+(`S=/tmp/x`, `D=$S/run-$$`, `t=$(mktemp -d)`, a template only with
+-t) binds where that statement
 runs, so `S=/tmp/x; rm -rf $S/y` judges /tmp/x/y and a use before the
 assignment stays unknown. `$CLAUDE_PROJECT_DIR` resolves from the hook's
 environment like `$TMPDIR`. Any other name the command assigns, exports,
@@ -163,8 +164,12 @@ runuser, or flock are scanned as scripts, as is a <(...) handed to a
 shell or source. xargs with a recursive remover denies unless its
 targets come from a pipe the hook can read. A remote program (ssh,
 docker) exempts what follows only in command position and, for a
-container, without a bind mount. A command over 512 KB or 200 heredocs
-denies outright. Each segment is tokenized with shlex. If
+container, without a bind mount, and a recursive remover inside a
+container with a bind mount denies. `env -S` and `--split-string`
+arguments are scanned as command lines. A heredoc written to a file that
+a shell, source, or . later runs in the same command is scanned. xargs
+input is read from echo and printf arguments, or as globs of find and ls
+start paths. A command over 512 KB or 200 heredocs denies outright. Each segment is tokenized with shlex. If
 the quotes never balance the split is redone with quotes ignored, so a
 stray apostrophe cannot hide a chained rm, `r''m` is seen as `rm`
 because the check runs on tokens, `RM` and `/bin/RM` fold to `rm` on a
@@ -232,7 +237,8 @@ import sys
 
 REMOVERS = {"rm", "rmdir", "unlink", "shred", "srm"}
 NON_RECURSIVE_REMOVERS = {"unlink", "shred", "srm"}
-SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "yash", "posh"}
+SHELLS |= {"csh", "tcsh", "fish"}
 # Programs that hand their -c argument to a shell: `script -qc 'cmd'`.
 C_RUNNERS = {"script", "su", "runuser", "flock"}
 CD_COMMANDS = {"cd", "pushd"}
@@ -279,6 +285,7 @@ _MAX_GROUPS = 32
 _MAX_CANDIDATES = 256
 _MAX_COMMAND = 512 * 1024
 _MAX_HEREDOCS = 200
+_XARGS_PRODUCERS = {"echo", "printf", "find", "ls"}
 _RECURSIVE = re.compile(r"--recursive|-[A-Za-z]*[rR][A-Za-z]*")
 _ALWAYS_DENY = {"credential store", "config file", "config root"}
 _FIND_DELETERS = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint"}
@@ -296,7 +303,7 @@ _CASE_FOLD = sys.platform in ("darwin", "win32", "cygwin") or _is_wsl()
 
 # A heredoc operator and its terminator word, matched only at a position the
 # quote-aware scanner has already judged to be outside quotes.
-_HEREDOC_WORD = re.compile(r"<<-?\s*(?:'([^']*)'|\"([^\"]*)\"|([^\s;&|<>]+))")
+_HEREDOC_WORD = re.compile(r"<<-?\s*((?:'[^']*'|\"[^\"]*\"|\\.|[^\s;&|<>'\"\\])+)")
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _BRACE_LIST = re.compile(r"^\{([^{}]*,[^{}]*)\}$")
 _VAR = re.compile(
@@ -311,6 +318,8 @@ _REBIND = re.compile(
     r"|\$\{([A-Za-z_][A-Za-z0-9_]*):?="
     r"|\bprintf\s+-v\s*([A-Za-z_][A-Za-z0-9_]*)"
     r"|\b(?:for|select)\s+(HOME|PWD|TMPDIR|CDPATH)\b"
+    r"|\blet\s+([A-Za-z_][A-Za-z0-9_]*)"
+    r"|\(\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:[-+*/%&|^]|<<|>>)?=(?!=)"
 )
 _REBIND_CMD = re.compile(
     r"(?<![\w/.-])(?:unset|read|readarray|mapfile|getopts|export|declare|typeset"
@@ -337,7 +346,7 @@ _REBIND_ALL = re.compile(
 # source, and a script read from stdin. Any of them makes the cwd and every
 # name unknown from that segment on. _apply_cd handles the directory stack.
 _OPAQUE = re.compile(
-    _CMD_POS + r"(?:source|\.|eval|trap|coproc|select|case|function)\s"
+    _CMD_POS + r"(?:source|\.|eval|trap|coproc|select|case|function|alias)\s"
     r"|[A-Za-z_][\w-]*\s*\(\s*\)"
     r"|/dev/stdin|/dev/fd/"
 )
@@ -441,7 +450,9 @@ def _lex(text: str):
             quote = "$'" if ansi else "'"
         elif c == '"':
             quote = '"'
-        elif c == "#" and (i == 0 or text[i - 1] in " \t\n;&|()"):
+        elif c == "#" and (
+            i == 0 or (text[i - 1] in " \t\n;&|()" and states[i - 1] == _ACTIVE)
+        ):
             j = text.find("\n", i)
             j = n if j < 0 else j
             states[i:j] = [_COMMENT] * (j - i)
@@ -480,10 +491,14 @@ def _find_heredoc(text: str):
         ):
             m = _HEREDOC_WORD.match(text, i)
             if m:
-                word = m.group(1) or m.group(2) or m.group(3) or ""
+                word = m.group(1)
                 term = re.sub(r"[\"'\\]", "", word)
                 return i, m.end(), term, text.startswith("<<-", i)
     return None
+
+
+_TRANSPARENT = {"sudo", "doas", "env", "nice", "nohup", "command", "exec", "time"}
+_TRANSPARENT |= {"caffeinate", "setsid", "ionice", "stdbuf"}
 
 
 def _is_remote(tokens: list, i: int) -> bool:
@@ -492,7 +507,12 @@ def _is_remote(tokens: list, i: int) -> bool:
     # `env -u ssh`) it is only a word, and a bind mount (`docker run -v
     # ~:/h`) puts this filesystem inside the container.
     prog = _prog(tokens[i])
-    if prog not in REMOTE_PROGRAMS or (i > 0 and tokens[i - 1].startswith("-")):
+    if prog not in REMOTE_PROGRAMS:
+        return False
+    prev = _prog(tokens[i - 1]) if i > 0 else None
+    behind_timeout = i > 1 and _prog(tokens[i - 2]) == "timeout"
+    if i > 0 and prev not in _TRANSPARENT and not behind_timeout:
+        # `flock ssh rm -rf ~` locks a file named ssh and runs rm here.
         return False
     if prog in ("docker", "podman", "nerdctl"):
         mounts = ("-v", "--volume", "--mount")
@@ -515,7 +535,7 @@ def _feeds_shell(line: str) -> bool:
     return _REBIND_SOURCE.search(_mask_quotes(line)) is not None
 
 
-def _strip_heredocs(cmd: str, fed: list = None) -> str:
+def _strip_heredocs(cmd: str, fed: list = None, written: dict = None) -> str:
     # Remove each heredoc body (and its operator) so quoted prose is never
     # mistaken for a command. A body whose terminator never appears is left
     # in place and scanned: that is deny-biased, and a real heredoc always
@@ -553,6 +573,10 @@ def _strip_heredocs(cmd: str, fed: list = None) -> str:
             owner += " " + out[end + 1 : len(out) if nxt < 0 else nxt]
         if fed is not None and _feeds_shell(owner):
             fed.append(out[body_start + 1 : pos])
+        elif written is not None:
+            target = re.search(r">\s*([^\s;&|<>]+)", owner)
+            if target:
+                written[target.group(1).strip("\"'")] = out[body_start + 1 : pos]
         out = out[:op_start] + " " + out[op_end:body_start] + out[end:]
 
 
@@ -809,6 +833,11 @@ def _is_rebound(name: str, ctx: dict) -> bool:
     return name in ctx["rebound"] or "*" in ctx["rebound"]
 
 
+# Anything in the command that can change what `git rev-parse
+# --show-toplevel` answers when bash runs it.
+_GIT_TAINT = (
+    r"\bGIT_\w*=|\bgit\s+(?:-c\b|config\b|init\b)|core\.worktree|\bexport\s+GIT_"
+)
 _TOPLEVEL_SPELLINGS = {
     "$(git rev-parse --show-toplevel)",
     "`git rev-parse --show-toplevel`",
@@ -867,7 +896,11 @@ def _apply_cd(tokens: list, where: _State, ctx: dict) -> bool:
     ):
         # ~ follows the new HOME, and a relative cd searches CDPATH first.
         new = None
-    elif args[0] in _TOPLEVEL_SPELLINGS and where.cwd is not None:
+    elif (
+        args[0] in _TOPLEVEL_SPELLINGS
+        and where.cwd is not None
+        and not ctx["git_tainted"]
+    ):
         new = _git_toplevel(where.cwd)
     else:
         t = args[0]
@@ -1011,7 +1044,9 @@ _LIT_REF = r"\$(?:\$|\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)"
 # `$(mktemp)`, `$(mktemp -d)`, or `$(mktemp -d -t name.XXXXXX)` always
 # names a fresh path under the scratch root. -p and --tmpdir pick another
 # directory, so they do not count.
-_MKTEMP = r"\$\(\s*mktemp(?:\s+-[dqtu]+)*(?:\s+[\w.-]*X{3,}[\w.-]*)?\s*\)"
+_MKTEMP = (
+    r"\$\(\s*mktemp(?:\s+-[dqu]+)*(?:\s+-[dqu]*t[dqu]*\s+[\w.-]*X{3,}[\w.-]*)?\s*\)"
+)
 _LIT_VALUE = (
     _MKTEMP + r"|\"" + _MKTEMP + r"\""
     r"|'[^'$`]*'"
@@ -1025,7 +1060,8 @@ _LIT_ASSIGN = re.compile(
 )
 _NUMERIC_REF = re.compile(r"\$(?:\$|\{\$\}|RANDOM\b|\{RANDOM\}|BASHPID\b|\{BASHPID\})")
 _BLOCK_WORDS = re.compile(
-    r"\b(?:if|then|else|elif|while|until|for|do|case|select|function|coproc)\b"
+    r"\b(?:if|then|else|elif|while|until|for|do|case|select|function|coproc|let)\b"
+    r"|(?<!\$)\(\("
     r"|\(\s*\)|(?<!\$)\{"
 )
 _SPECIAL_NAMES = {"HOME", "PWD", "OLDPWD", "TMPDIR", "CDPATH", "IFS", "PATH"}
@@ -1044,6 +1080,9 @@ def _literals(cmd: str) -> set:
     for m in _LIT_ASSIGN.finditer(cmd):
         name = m.group(1)
         if name in _SPECIAL_NAMES:
+            continue
+        if cmd[: m.start()].rstrip().endswith(("&&", "||", "|", "\\")):
+            # `true ||` then a newline: the assignment may never run.
             continue
         writes = re.findall(rf"(?<![\w$]){name}(?:\[[^\]\n]{{0,64}}\])?\+?=", cmd)
         others = _rebound(re.sub(rf"(?<![\w$]){name}=", " ", cmd))
@@ -1316,9 +1355,13 @@ def _check_tokens(
             t.rstrip(";") for t in tokens[3:] if t.rstrip(";") and t not in ("do", ";")
         ]
         return None
-    if tokens and tokens[0] == "trap" and len(tokens) > 1:
-        # `trap 'rm -rf ~' EXIT` runs its first argument later.
-        return scan(tokens[1], ctx, depth + 1, where.copy())
+    k = 0
+    while k < len(tokens) and _prog(tokens[k]) in _CD_PREFIX:
+        k += 1
+    if k < len(tokens) and _prog(tokens[k]) == "trap":
+        # `trap -- 'rm -rf ~' EXIT` runs its first operand later.
+        ops = [t for t in tokens[k + 1 :] if t not in ("--", "-p", "-l")]
+        return scan(ops[0], ctx, depth + 1, where.copy()) if ops else None
     if tokens and tokens[0] == "alias":
         for tok in tokens[1:]:
             if "=" in tok:
@@ -1327,7 +1370,34 @@ def _check_tokens(
                     return hit
         return None
     remote = False
+    mounted = False
     for i, tok in enumerate(tokens):
+        if _prog(tok) == "env":
+            # `env -S 'rm -rf ~'` splits one argument into a command line.
+            for j, t in enumerate(tokens[i + 1 :], start=i + 1):
+                script = None
+                if t in ("-S", "--split-string") and j + 1 < len(tokens):
+                    script = tokens[j + 1]
+                elif t.startswith("--split-string="):
+                    script = t.split("=", 1)[1]
+                elif t.startswith("-S") and len(t) > 2:
+                    script = t[2:]
+                if script is not None:
+                    hit = scan(script, ctx, depth + 1, where.copy())
+                    if hit:
+                        return hit
+        if _prog(tok) in ("docker", "podman", "nerdctl") and any(
+            t.startswith(("-v", "--volume", "--mount")) for t in tokens[i + 1 :]
+        ):
+            mounted = True
+        if _prog(tok) in SHELLS | {"source", "."}:
+            for t in tokens[i + 1 :]:
+                body = ctx["written"].get(t)
+                if body is not None:
+                    # `cat > s <<EOF ... EOF; bash s` runs what it wrote.
+                    hit = scan(body, ctx, depth + 1, where.copy())
+                    if hit:
+                        return hit
         prog = _prog(tok)
         if _is_remote(tokens, i):
             remote = True
@@ -1365,8 +1435,16 @@ def _check_tokens(
             from_file = any(
                 t in ("-a", "--arg-file") or t.startswith("--arg-file=") for t in after
             )
-            if pipe_sink and not from_file:
-                hit = _judge_targets(prev_tokens[1:], True, where, ctx, force_glob=True)
+            producer = _prog(prev_tokens[0]) if prev_tokens else ""
+            if pipe_sink and not from_file and producer in _XARGS_PRODUCERS:
+                # echo and printf print their arguments. find and ls print
+                # paths under their start paths, judged as globs of them.
+                args = prev_tokens[1:]
+                if producer in ("find", "ls"):
+                    args = [a for a in args if not a.startswith(("-", "(", "!"))]
+                    args = args[:1] if producer == "find" else args
+                    args = args or ["."]
+                hit = _judge_targets(args, True, where, ctx, force_glob=True)
                 if hit:
                     return hit
             elif any(_RECURSIVE.fullmatch(t) for t in after):
@@ -1389,6 +1467,12 @@ def _check_tokens(
                 return hit
             continue
         if prog in REMOVERS:
+            if mounted and (
+                prog == "rmdir" or any(_RECURSIVE.fullmatch(t) for t in tokens[i + 1 :])
+            ):
+                # `docker run -v ~:/w alpine rm -rf /w` deletes a host path
+                # under a name the hook cannot map back.
+                return ("<container path>", "<bind mount>", "bind-mounted target")
             if remote or (i > 0 and _prog(tokens[i - 1]) == "git"):
                 continue
             hit = _check_removal(tokens[i + 1 :], prog, where, ctx)
@@ -1409,7 +1493,7 @@ def scan(cmd: str, ctx: dict, depth: int = 0, where: _State = None, groups: int 
     if where is None:
         where = _State(ctx["session_cwd"])
     fed = []
-    cleaned = _strip_heredocs(cmd, fed)
+    cleaned = _strip_heredocs(cmd, fed, ctx["written"])
     ctx["rebound"] |= _rebound(cleaned)
     for body in fed:
         hit = scan(body, ctx, depth + 1, where.copy())
@@ -1428,8 +1512,11 @@ def scan(cmd: str, ctx: dict, depth: int = 0, where: _State = None, groups: int 
         if lit and lit.group(1) in ctx["literals"]:
             value = _NUMERIC_REF.sub("0", lit.group(2).strip("\"'"))
             scratch = os.environ.get("TMPDIR", "").rstrip("/") or "/tmp"
+            minted = re.search(_MKTEMP, value) is not None
             value = re.sub(_MKTEMP, scratch + "/tmp.mktemp", value)
             values = _substitute_refs(value, where, ctx, True)
+            if minted and _is_rebound("TMPDIR", ctx):
+                values = None
             if values is not None and len(values) == 1:
                 where.vars[lit.group(1)] = values
             prev_tokens = tokens
@@ -1511,6 +1598,8 @@ def main() -> int:
         "rebound": set(),
         "names_protected": _names_protected(cmd, config_root),
         "literals": _literals(cmd),
+        "written": {},
+        "git_tainted": re.search(_GIT_TAINT, cmd) is not None,
     }
     ancestors, cur = [], ctx["session_cwd"]
     while True:
