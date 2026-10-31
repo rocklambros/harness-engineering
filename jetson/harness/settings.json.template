@@ -63,7 +63,16 @@
       "Edit(~/.gnupg/**)",
       "Edit(~/.aws/credentials)",
       "Edit(~/.aws/config)",
-      "Edit(~/.kube/config)"
+      "Edit(~/.kube/config)",
+      "Edit(**/.env)",
+      "Edit(**/.env.*)",
+      "Edit(**/secrets/**)",
+      "Edit(**/.secrets/**)",
+      "Edit(**/credentials.json)",
+      "Read(~/.claude/.credentials.json)",
+      "Read(~/.password-store/**)",
+      "Bash(sudo:*)",
+      "Bash(claude --dangerously-skip-permissions:*)"
     ]
   },
   "_comment_hooks": "Hooks register against Claude Code events. PostToolUse on Write and Edit fires the commit-time Semgrep hook (the SecureForge Appendix C pattern, R.2.1). The five destructive-class hooks (external-write-gate, cached-prefix-write-gate, git-push-force-ask, bash-deny-rm-protected-paths, ConfigChange-audit-claude-config) fail closed per AP.8: onFailure: block, exec form under python3 -I, 10 second timeout. The other hooks fail open by design, so a stalled advisory hook cannot wedge a run. MemPalace hooks present on Mac are intentionally absent here per the Memory layer divergence in jetson/ARCHITECTURE.md (Jetson uses claude-mem, which operates via its own automatic capture rather than a model-callable protocol).",
