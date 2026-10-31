@@ -52,39 +52,99 @@ if [[ "${version%.*}" != "$PIN_MAJOR_MINOR" && -z "${HARNESS_ALLOW_UNPINNED:-}" 
   fail "claude $version is outside the pinned $PIN_MAJOR_MINOR.x range; re-evaluate per QC.5 or set HARNESS_ALLOW_UNPINNED=1"
 fi
 
-# Registrations: each gate must be in the settings file with onFailure: block.
-python3 -I - "$SETTINGS" "${GATES[@]}" <<'PY' || fail "settings file does not register every gate fail-closed"
-import json, os, sys
-settings, gates = sys.argv[1], set(sys.argv[2:])
-d = json.load(open(settings, encoding="utf-8"))
-seen = {}
-for event, groups in (d.get("hooks") or {}).items():
-    if event.startswith("_") or not isinstance(groups, list):
-        continue
-    for g in groups:
-        for e in g.get("hooks", []) if isinstance(g, dict) else []:
-            if not isinstance(e, dict):
+# Registrations: each gate must be registered with onFailure: block, in the
+# settings file or in root-owned managed settings, where
+# scripts/install-managed-gates.sh puts it and where it is removed from the
+# user file (operator decision, October 31, 2026). Gates found only in
+# managed settings are merged into a private copy of the settings file and
+# passed with --settings, because --bare skips settings hooks and its help
+# text does not say whether managed hooks survive. The merge keeps the gates
+# in the run either way. The managed path is fixed and its files must be
+# root-owned and not group or world writable, so a user-writable file there
+# cannot pose as policy.
+case "$(uname -s)" in
+  Darwin) MANAGED_DIR="/Library/Application Support/ClaudeCode" ;;
+  *) MANAGED_DIR="/etc/claude-code" ;;
+esac
+RUN_DIR="$(mktemp -d)"
+chmod 0700 "$RUN_DIR"
+trap 'rm -rf "$RUN_DIR"' EXIT
+MERGED="$RUN_DIR/settings.json"
+
+probes="$(python3 -I - "$SETTINGS" "$MANAGED_DIR" "$HOOKS_DIR" "$MERGED" "${GATES[@]}" <<'PY'
+import glob, json, os, stat, sys
+settings, managed_dir, hooks_dir, merged = sys.argv[1:5]
+gates = sys.argv[5:]
+
+def root_owned(path):
+    st = os.stat(path)
+    return st.st_uid == 0 and not st.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+
+def entries(d):
+    for event, groups in (d.get("hooks") or {}).items():
+        if event.startswith("_") or not isinstance(groups, list):
+            continue
+        for g in groups:
+            if not isinstance(g, dict):
                 continue
-            path = (e.get("args") or [e.get("command", "")])[-1]
-            seen[os.path.basename(str(path))] = e.get("onFailure")
-missing = [g for g in gates if seen.get(g) != "block"]
+            for e in g.get("hooks", []):
+                if isinstance(e, dict):
+                    path = str((e.get("args") or [e.get("command", "")])[-1])
+                    yield event, g, e, os.path.basename(path), path
+
+user = json.load(open(settings, encoding="utf-8"))
+found = {}
+for _, _, e, name, path in entries(user):
+    if name in gates and e.get("onFailure") == "block":
+        found[name] = ("python3", os.path.join(hooks_dir, name))
+
+files = [os.path.join(managed_dir, "managed-settings.json")]
+files += sorted(glob.glob(os.path.join(managed_dir, "managed-settings.d", "*.json")))
+add = {}
+for f in files:
+    if not os.path.isfile(f) or not root_owned(f):
+        continue
+    for event, g, e, name, path in entries(json.load(open(f, encoding="utf-8"))):
+        if name not in gates or name in found or e.get("onFailure") != "block":
+            continue
+        if not (os.path.isabs(path) and os.path.isfile(path) and root_owned(path)):
+            continue
+        found[name] = (e.get("command", ""), path)
+        add.setdefault(event, []).append({"matcher": g.get("matcher", ""), "hooks": [e]})
+
+missing = [g for g in gates if g not in found]
 if missing:
     print("not registered fail-closed: " + ", ".join(missing), file=sys.stderr)
     sys.exit(1)
+hooks = user.setdefault("hooks", {})
+for event, groups in add.items():
+    hooks.setdefault(event, []).extend(groups)
+fd = os.open(merged, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(fd, "w", encoding="utf-8") as out:
+    json.dump(user, out)
+for name in gates:
+    print("\t".join(found[name]))
 PY
+)" || fail "settings file and managed settings do not register every gate fail-closed"
 
-# Start probe: each gate run on empty stdin must exit 0 or 2. 127 means no
-# interpreter, 1 means a crash, either of which would block the whole run.
-for gate in "${GATES[@]}"; do
-  path="$HOOKS_DIR/$gate"
+# Start probe: each gate run by its registered interpreter on empty stdin
+# must exit 0 or 2. 127 means no interpreter, 1 means a crash, either of
+# which would block the whole run.
+while IFS=$'\t' read -r interp path; do
   [[ -f "$path" ]] || fail "gate missing on disk: $path"
   set +e
-  python3 -I "$path" </dev/null >/dev/null 2>&1
+  "$interp" -I "$path" </dev/null >/dev/null 2>&1
   rc=$?
   set -e
   if [[ $rc -ne 0 && $rc -ne 2 ]]; then
     fail "gate cannot start cleanly (exit $rc): $path"
   fi
-done
+done <<< "$probes"
 
-exec claude -p --settings "$SETTINGS" "$@"
+# Not exec: the EXIT trap has to remove the merged settings copy, which can
+# carry the same env and helper settings as the original.
+set +e
+claude -p --settings "$MERGED" "$@"
+rc=$?
+set -e
+exit "$rc"

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Install the six fail-closed gates as managed (system) hooks.
+# Install the six fail-closed gates and the supply-chain hook as managed
+# (system) hooks.
 #
 # Why: hooks in ~/.claude/settings.json and the scripts in ~/.claude/hooks
 # are owned by the same user the agent runs as, so a Bash write can replace
@@ -10,23 +11,26 @@
 # root (https://code.claude.com/docs/en/hooks.md, Hook locations).
 #
 # What it does, as root:
-#   1. Copies the six gate scripts from the platform source tree into
+#   1. Copies the seven scripts from the platform source tree into
 #      LIB_DIR, owned by root, mode 0755 (directory) and 0644 (scripts).
 #   2. Writes DROPIN with one registration per gate in exec form, run by
-#      an absolute python3 under -I, onFailure "block", timeout 10. The
+#      an absolute python3 under -I, timeout 10, and onFailure "block"
+#      for the fail-closed class. The
 #      absolute interpreter path keeps a python3 planted earlier on PATH
 #      (~/.local/bin is user-writable) from running in its place.
 #
 # What it does not do: set allowManagedHooksOnly (that would block plugin
-# hooks such as claude-mem) or touch the user-level registrations, which
-# keep running alongside the managed copies until the operator removes them.
+# hooks such as claude-mem) or touch the user-level registrations. Remove
+# those by hand after the install: drift check 6 reports a hook registered
+# in both places, because the user copy runs a second time and adds no
+# protection.
 #
 # Usage:
 #   sudo bash scripts/install-managed-gates.sh --platform jetson
 #   sudo bash scripts/install-managed-gates.sh --platform mac
 #   bash scripts/install-managed-gates.sh --platform jetson --dry-run
 #
-# Rerun after every deploy that changes one of the six scripts: drift
+# Rerun after every deploy that changes one of the seven scripts: drift
 # between ~/.claude/hooks and LIB_DIR is not checked yet.
 #
 # Owner: harness-engineering (October 31, 2026)
@@ -39,7 +43,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --platform) PLATFORM="${2:-}"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
-    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
     *) echo "install-managed-gates: unknown argument $1" >&2; exit 2 ;;
   esac
 done
@@ -65,14 +69,19 @@ PYTHON="/usr/bin/python3"
 
 [[ -x "$PYTHON" ]] || { echo "install-managed-gates: $PYTHON not found" >&2; exit 2; }
 
-# event|matcher|script
+# class|event|matcher|script
+# fail-closed registers onFailure "block". advisory keeps Claude Code's
+# fail-open default and is managed only so a user-level edit cannot remove
+# it: the supply-chain hook holds the curl-to-shell floor that autonomous
+# mode cannot lift (operator decision, October 31, 2026).
 GATES=(
-  "PreToolUse|Bash|PreToolUse-bash-deny-rm-protected-paths.py"
-  "PreToolUse|Bash|PreToolUse-git-push-force-ask.py"
-  "PreToolUse|Bash|PreToolUse-bash-cap-subcommands.py"
-  "PreToolUse|Write|Edit|MultiEdit|NotebookEdit|PreToolUse-external-write-gate.py"
-  "PreToolUse|Write|Edit|MultiEdit|NotebookEdit|PreToolUse-cached-prefix-write-gate.py"
-  "ConfigChange|project_settings|local_settings|ConfigChange-audit-claude-config.py"
+  "fail-closed|PreToolUse|Bash|PreToolUse-bash-deny-rm-protected-paths.py"
+  "fail-closed|PreToolUse|Bash|PreToolUse-git-push-force-ask.py"
+  "fail-closed|PreToolUse|Bash|PreToolUse-bash-cap-subcommands.py"
+  "advisory|PreToolUse|Bash|PreToolUse-supply-chain-bash-checks.py"
+  "fail-closed|PreToolUse|Write|Edit|MultiEdit|NotebookEdit|PreToolUse-external-write-gate.py"
+  "fail-closed|PreToolUse|Write|Edit|MultiEdit|NotebookEdit|PreToolUse-cached-prefix-write-gate.py"
+  "fail-closed|ConfigChange|project_settings|local_settings|ConfigChange-audit-claude-config.py"
 )
 
 for gate in "${GATES[@]}"; do
@@ -85,15 +94,18 @@ import json, sys
 python, lib = sys.argv[1], sys.argv[2]
 hooks = {}
 for gate in sys.argv[3:]:
-    event, rest = gate.split("|", 1)
+    cls, event, rest = gate.split("|", 2)
     matcher, script = rest.rsplit("|", 1)
     entry = {
         "type": "command",
         "command": python,
         "args": ["-I", f"{lib}/{script}"],
-        "onFailure": "block",
         "timeout": 10,
     }
+    if cls == "fail-closed":
+        entry["onFailure"] = "block"
+    elif cls != "advisory":
+        sys.exit(f"install-managed-gates: unknown class {cls}")
     groups = hooks.setdefault(event, [])
     for g in groups:
         if g["matcher"] == matcher:
@@ -135,5 +147,5 @@ for gate in "${GATES[@]}"; do
   echo '{}' | "$PYTHON" -I "$LIB_DIR/$script" >/dev/null 2>&1 || rc=$?
   [[ $rc -eq 0 || $rc -eq 2 ]] || { echo "install-managed-gates: $script exited $rc" >&2; exit 2; }
 done
-echo "Installed six managed gates: $DROPIN"
+echo "Installed seven managed hooks: $DROPIN"
 echo "Restart Claude Code, then run /hooks and confirm each gate lists a managed source."

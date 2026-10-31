@@ -108,6 +108,18 @@ Deferred: the subcommand cap counts heredoc body lines, so a heredoc over 49 lin
 
 ---
 
+## October 31, 2026: Managed gates become the only live copy, and the curl-to-shell floor joins them
+
+A verification pass after the managed install found two gaps. Every fail-closed gate ran twice, once from the managed drop-in and once from `~/.claude/settings.json`. Measured on the Jetson, the three Bash gates cost 82, 69, and 45 ms per call, so each Bash call spent about 200 ms of CPU on copies that add no protection: same code, weaker ownership. The second gap was the supply-chain hook. Its curl-to-shell prompt became a floor autonomous mode cannot lift earlier the same day, and it was left out of the installer because the installer took only the fail-closed class. A user-level edit could still remove it.
+
+The managed drop-in now counts as a registration source. Drift check 6 reads it, requires an absolute interpreter there, and reports a hook registered in both managed and user settings. `scripts/claude-unattended.sh` accepts a gate registered in managed settings when the drop-in and the script it names are root-owned and not group or world writable. It merges those gates into a private copy of the settings file it passes with `--settings`, because `--bare` skips settings hooks and its help text does not say whether managed hooks survive. The installer gains a class field, and the supply-chain hook installs as advisory, keeping its fail-open default so its class does not change. Repo templates keep the user-level registrations, since an adopter without root has no managed layer.
+
+On the Jetson the six user copies are removed. The supply-chain user copy stays until the installer is rerun with root, so the floor is never unregistered in between. Drift check 6 then reports it as a duplicate until it is removed too.
+
+Open: the launcher's managed path and root-ownership rule have no Windows equivalent, and neither does the installer.
+
+---
+
 
 ## Template for future entries
 
