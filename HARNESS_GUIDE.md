@@ -134,22 +134,30 @@ HARNESS_SETTINGS=/path/to/settings.json scripts/claude-unattended.sh "..."
 
 ### Rolling back a gate
 
-A gate that misfires in an unattended run needs a path shorter than "edit the user settings by hand". The live `~/.claude` is a git repository with a backup remote, so the previous hook bodies and registrations are one checkout away:
+A gate that misfires in an unattended run needs a path shorter than "edit the user settings by hand". On the Mac reference host the live `~/.claude` is a git repository with a backup remote, so the previous hook bodies and registrations are one checkout away:
 
 ```bash
 git -C ~/.claude log --oneline -5 -- settings.json hooks/
 git -C ~/.claude checkout <sha> -- settings.json hooks/PreToolUse-bash-deny-rm-protected-paths.py
 ```
 
-To run one session with a single gate unregistered while keeping the other three, pass a settings override at launch rather than editing the file: `claude --settings '{"hooks":{"PreToolUse":[...]}}'` with the suspect entry left out. `disableAllHooks: true` is the wrong tool for this: it removes every control at once, including the audit hook. After any hook deploy, run `~/.claude/hooks/backup-config.sh` so the backup never lags the live gates.
+To run one session with a single gate unregistered while keeping the other three, pass a settings override at launch rather than editing the file: `claude --settings '{"hooks":{"PreToolUse":[...]}}'` with the suspect entry left out. `disableAllHooks: true` is the wrong tool for this: it removes every control at once, including the audit hook. On the Mac, after any hook deploy, run `~/.claude/hooks/backup-config.sh` so the backup never lags the live gates.
+
+On Jetson, `~/.claude` is not a git repository and `backup-config.sh` does not exist. Take a tar snapshot before each deploy and restore from it:
+
+```bash
+tar -czf ~/backups/claude-config-$(date +%F).tgz -C ~ .claude/settings.json .claude/hooks
+tar -xzf ~/backups/claude-config-2026-10-30.tgz -C ~
+```
 
 ### Testing the gates
 
-Both hooks ship with a committed matrix under `mac/harness/hooks/tests/`. Each case pipes a real PreToolUse payload through the hook as a subprocess and checks the exit code and output, so the matrix exercises the entry point the runtime uses. Run them from the repo root after any change to either hook, and after a Claude Code minor bump:
+The three gates ship with a committed matrix each under `mac/harness/hooks/tests/`. Each case pipes a real hook payload through the hook as a subprocess and checks the exit code and output, so the matrix exercises the entry point the runtime uses. Run them from the repo root after any change to a gate, and after a Claude Code minor bump. The Jetson copies under `jetson/harness/hooks/tests/` are byte-identical and run the same way against the deployed hooks:
 
 ```bash
 python3 -I mac/harness/hooks/tests/test_external_write_gate.py mac/harness/hooks/PreToolUse-external-write-gate.py
 python3 -I mac/harness/hooks/tests/test_bash_deny_rm_protected_paths.py mac/harness/hooks/PreToolUse-bash-deny-rm-protected-paths.py
+python3 -I mac/harness/hooks/tests/test_configchange_audit_claude_config.py mac/harness/hooks/ConfigChange-audit-claude-config.py
 ```
 
 ## Versioning posture

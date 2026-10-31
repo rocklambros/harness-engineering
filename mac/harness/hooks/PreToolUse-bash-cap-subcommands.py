@@ -109,6 +109,10 @@ def autonomous_bypass(tool_name: str, command: str,
     line = "\t".join((ts, hook_name, tool_name,
                       command.replace("\n", "\\n"), reason)) + "\n"
     try:
+        # Claude Code does not create ~/.claude/logs/, and open() in append
+        # mode cannot create a missing parent, so without this the
+        # OSError branch drops every bypass record on a fresh host.
+        os.makedirs(os.path.dirname(_BYPASS_LOG), mode=0o700, exist_ok=True)
         with open(_BYPASS_LOG, "a", encoding="utf-8") as f:
             f.write(line)
     except OSError:

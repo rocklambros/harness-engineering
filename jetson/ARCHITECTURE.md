@@ -101,6 +101,18 @@ Reason for divergence: MemPalace does not run on Jetson AGX Orin hardware. Adopt
 
 Follow-ups not addressed in this divergence note: claude-mem is not yet recorded as an adopted seed in `foundation/03-seed-evaluation-methodology.md` §Seeds. Windows is currently assumed to be MemPalace-compatible pending hardware validation; if that assumption breaks during Phase 3 hardware work, this section becomes a two-platform divergence.
 
+### Linux host state
+
+The first on-device deploy of the scratch-roots change, October 30, 2026, found six facts about this host that the Mac-derived runbooks assumed otherwise. Each one changes what an operator runs, so they are recorded here rather than rediscovered per deploy.
+
+`$TMPDIR` is unset, which is the common case on Linux. `getconf DARWIN_USER_TEMP_DIR` does not exist. The external-write gate's scratch set is therefore `/tmp` alone, and of the eight scratch allow rules in the template only `Read(//tmp/**)` and `Edit(//tmp/**)` match a real path. The `//private/...` and `//var/folders/...` rules stay for parity and match nothing. A `$TMPDIR`-relative recursive rm expands to a root-level path and the rm hook denies it, which is the safe direction.
+
+`~/.claude` is not a git repository and `~/.claude/hooks/backup-config.sh` does not exist, so the git-based rollback in `HARNESS_GUIDE.md` does not apply. The equivalent is a tar snapshot of `~/.claude/settings.json` and `~/.claude/hooks/` taken before each deploy, for example `~/backups/claude-config-2026-10-30.tgz`, restored with `tar -xzf <snapshot> -C ~`.
+
+`~/.claude/logs/` did not exist. Claude Code does not create it, and the two bypass hooks wrote no autonomous-mode log line until the directory existed. The hooks now create it at mode 0700. The runbook also creates it by hand so older deployed copies log too.
+
+claude-mem registers its hooks through its own plugin `hooks.json`, not through `~/.claude/settings.json`. Drift check 6 reads only settings files, so it never sees them, and `LIVE_ONLY_BY_PLATFORM["jetson"]` in `scripts/check-hook-registrations.py` stays empty.
+
 ## Build sequence on Jetson
 
 Same six-phase sequence as Mac. Phase boundaries map to the same Quality Contract properties and threat IDs.

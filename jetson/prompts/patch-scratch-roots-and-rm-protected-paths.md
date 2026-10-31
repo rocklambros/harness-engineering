@@ -19,10 +19,10 @@ portability). This prompt is a port runbook, not a redesign.
 
 <role>
 You are a senior harness engineer applying a post-Phase-3 refinement on Jetson.
-The change is mechanical: confirm the tracked Jetson files match Mac, deploy the
-three hooks to the live hooks directory, render the settings template, register
-at user level, and prove all three hooks on this host with the committed test
-matrices and drift check 6.
+The change is mechanical: confirm the tracked Jetson files match Mac, deploy
+every hook the template registers to the live hooks directory, render the
+settings template, register at user level, and prove the three gates on this
+host with the committed test matrices and drift check 6.
 
 Match the writing rules.
 </role>
@@ -31,7 +31,7 @@ Match the writing rules.
 <mode>default</mode>
 <thinking>standard</thinking>
 <context_budget>One pass. No compaction expected.</context_budget>
-<scope>Strict. Three hook files and three test files already tracked, three deployed copies on disk, one rendered settings file merged at user level, one commit.</scope>
+<scope>Strict. Three hook files and three test files already tracked. Every hook the rendered template registers, plus any whose tracked source changed, deployed on disk. One rendered settings file merged at user level. One commit.</scope>
 
 <context>
 What changed and why is in three places. Read them before touching the host:
@@ -47,8 +47,13 @@ What changed and why is in three places. Read them before touching the host:
 
 On Jetson the home is `/home/<user>`, there is no `/private`, and `getconf
 DARWIN_USER_TEMP_DIR` does not exist. Both hooks handle that: the write gate's
-scratch roots collapse to `/tmp` and `$TMPDIR`, and the rm hook's `/private`
-and `/Volumes` shapes never match a real path. `/media/<user>` and
+scratch roots collapse to `/tmp` plus `$TMPDIR` when it is set, and the rm
+hook's `/private` and `/Volumes` shapes never match a real path. `$TMPDIR` is
+usually unset on Linux, and it was unset on the first Jetson run, so the
+effective scratch set is `/tmp` alone. Of the eight scratch allow rules, only
+`Read(//tmp/**)` and `Edit(//tmp/**)` match a real path here. The
+`//private/...` and `//var/folders/...` rules stay in the template for parity
+and match nothing. `/media/<user>` and
 `/mnt/<name>` are the mounted-volume shapes that matter here. No path edits are
 needed in either script.
 
@@ -97,32 +102,75 @@ If any differs, replace the Jetson copy with the Mac source unless
 
 ### 2. Deploy to the live hooks directory
 
+`~/.claude` is not a git repository on Jetson and `backup-config.sh` does not
+exist here, so take a snapshot first. It is the rollback path.
+
 ```bash
-for f in PreToolUse-external-write-gate.py PreToolUse-bash-deny-rm-protected-paths.py ConfigChange-audit-claude-config.py; do
-  cp jetson/harness/hooks/$f ~/.claude/hooks/$f
-  chmod +x ~/.claude/hooks/$f
-  cmp -s jetson/harness/hooks/$f ~/.claude/hooks/$f && echo "deployed == source: $f"
-done
+mkdir -p ~/backups
+tar -czf ~/backups/claude-config-$(date +%F).tgz -C ~ .claude/settings.json .claude/hooks
 ```
 
-### 3. Render the settings template and confirm the registrations
-
-Use the deploy script's dry run for the rendering: it rewrites `{{REPO_ROOT}}/harness/hooks` to `~/.claude/hooks`, where step 2 put the files, and refuses to continue if a placeholder survives in a hook path. A plain `sed` of `{{REPO_ROOT}}` to the repo root would register `<repo>/harness/hooks/...`, which does not exist in this build repository, and the four fail-closed hooks would then block every call.
+Deploy every hook the rendered template registers, not only the three this
+change touches. The template registers hooks that may be missing on disk
+(`SessionStart-audit-plugin-updates.py` was on the first run), and a missing
+fail-closed hook blocks every call. Drift check 5 also requires any hook whose
+tracked source changed since the last deploy. On the first run that was
+`PreToolUse-supply-chain-bash-checks.py` and
+`PreToolUse-bash-cap-subcommands.py`, after commit 2cc63ac moved the bypass log
+to `~/.claude/logs/`. The deploy script copies every `.py` and `.sh` in
+`jetson/harness/hooks/` that differs from the deployed copy, which covers both
+cases. Review the dry run, then run it for real.
 
 ```bash
 bash scripts/deploy-harness.sh --platform jetson --dry-run
-sed "s|{{REPO_ROOT}}/harness/hooks|$HOME/.claude/hooks|g" jetson/harness/settings.json.template > /tmp/rendered-settings.json
-python3 - <<'PY'
-import json
-d = json.load(open("/tmp/rendered-settings.json"))
-import os
+bash scripts/deploy-harness.sh --platform jetson
+for src in jetson/harness/hooks/*.py jetson/harness/hooks/*.sh; do
+  f=$(basename "$src")
+  cmp -s "$src" ~/.claude/hooks/"$f" && echo "deployed == source: $f" || echo "DIFFERS: $f"
+done
+```
+
+The script never overwrites an existing `~/.claude/settings.json`. It prints
+the hooks-block diff for step 3.
+
+Create the bypass log directory. Claude Code does not create it, and hook
+copies older than the commit `hook: create the bypass log directory before
+writing` drop every autonomous-mode log line when it is missing.
+
+```bash
+mkdir -m 700 -p ~/.claude/logs
+```
+
+If an old `~/.claude/hooks/autonomous-bypass.log` exists, move it into
+`~/.claude/logs/` by hand in a terminal. Run from a session, the rm hook denies
+an `mv` that takes a file out of `~/.claude`, by design.
+
+### 3. Render the settings template and confirm the registrations
+
+The deploy script's dry run in step 2 already rendered the template and
+printed the hooks-block diff. It rewrites `{{REPO_ROOT}}/harness/hooks` to
+`~/.claude/hooks`, where step 2 put the files, and refuses to continue if a
+placeholder survives in a hook path. A plain `sed` of `{{REPO_ROOT}}` to the
+repo root would register `<repo>/harness/hooks/...`, which does not exist in
+this build repository, and the four fail-closed hooks would then block every
+call. Render once more into a private directory to check the registrations and
+rules. A render under `/tmp` is world-readable.
+
+```bash
+render=$(mktemp -d)
+sed "s|{{REPO_ROOT}}/harness/hooks|$HOME/.claude/hooks|g" jetson/harness/settings.json.template > "$render/settings.json"
+python3 - "$render/settings.json" <<'PY'
+import json, os, sys
+d = json.load(open(sys.argv[1]))
 for ev, groups in d["hooks"].items():
     for g in groups if isinstance(groups, list) else []:
         for e in g.get("hooks", []):
             path = (e.get("args") or [e.get("command")])[-1]
             print(ev, e.get("onFailure", "-"), e.get("timeout", "-"), path, "OK" if os.path.exists(path) else "MISSING")
-print("scratch allows:", [r for r in d["permissions"]["allow"] if "tmp" in r])
-print("etc/ssh denies:", [r for r in d["permissions"]["deny"] if "etc" in r or ".ssh" in r])
+print("scratch allows:", [r for r in d["permissions"]["allow"] if "tmp" in r or "/T/" in r])
+expected = ["Edit(//etc/**)", "Edit(//private/etc/**)", "Edit(~/.ssh/**)", "Edit(~/.gnupg/**)",
+            "Edit(~/.aws/credentials)", "Edit(~/.aws/config)", "Edit(~/.kube/config)"]
+print("missing denies:", [r for r in expected if r not in d["permissions"]["deny"]])
 PY
 ```
 
@@ -130,11 +178,19 @@ Expected: every registered path prints `OK`, the five destructive-class hooks
 (git-push-force-ask, bash-deny-rm-protected-paths, external-write-gate,
 cached-prefix-write-gate, and ConfigChange-audit-claude-config on
 `project_settings|local_settings`) show `block 10`, eight scratch allow rules,
-and the `Edit(//etc/**)`, `Edit(//private/etc/**)`, `Edit(~/.ssh/**)`,
-`Edit(~/.gnupg/**)`, `Edit(~/.aws/credentials)`, `Edit(~/.aws/config)`, and
-`Edit(~/.kube/config)` denies. Register
-at user level in `~/.claude/settings.json`, as the Mac reference host does, so
-the gates apply to every project on the device. Confirm `claude --version`
+and `missing denies: []`. The seven expected denies are:
+
+- `Edit(//etc/**)` and `Edit(//private/etc/**)`
+- `Edit(~/.ssh/**)` and `Edit(~/.gnupg/**)`
+- `Edit(~/.aws/credentials)` and `Edit(~/.aws/config)`
+- `Edit(~/.kube/config)`
+
+Register at user level in `~/.claude/settings.json`, as the Mac reference host
+does, so the gates apply to every project on the device. Merge the `hooks`
+block and the `permissions` block from the render. Leave out `Read(./**)`,
+`Edit(./**)`, and `Bash(./scripts/**)`. They are project-scope allows, and at
+user level they widen every project on the device. Remove the render directory
+when done. Confirm `claude --version`
 reports 2.1.295 or later. Below that floor `onFailure` is ignored and the five
 gates fail open: upgrade first, and do not record the port as deployed until
 the version is at or above the floor.
@@ -157,7 +213,9 @@ confirm the transcript shows the string `Denied by
 PreToolUse-bash-deny-rm-protected-paths`, not a prompt and not a rule-layer
 refusal. Document the matrix counts and the probe in
 `phase-outputs/PHASE_3_VALIDATION.md` (create it if absent) under a Jetson
-post-Phase-3 refinement section.
+post-Phase-3 refinement section. `phase-outputs/` is gitignored, so that file
+stays on the host. The commit body in step 6 carries the evidence into the
+repository: matrix counts, the probe result, drift check, and Semgrep.
 
 ### 5. Drift and SAST
 
@@ -192,8 +250,13 @@ Why: AP.3 (parity), AP.8 (fail closed), AP.11 (reversibility). Reference:
 JOURNEY.md, October 30, 2026.
 
 Tradeoff: The write gate's per-user temp root is macOS-only by construction.
-On Jetson the scratch set is /tmp and $TMPDIR, which is the documented
-Linux behavior, not a gap.
+On Jetson $TMPDIR is unset, so the effective scratch set is /tmp alone. A
+$TMPDIR-relative recursive rm denies, which is the safe direction.
+
+Validated on Jetson (aarch64, Claude Code <version>): external-write-gate
+<n>/<n>, rm protected-paths <n>/<n>, ConfigChange <n>/<n>. Live probe
+rm -rf /usr denied by PreToolUse-bash-deny-rm-protected-paths. drift-check.sh
+clean, including check 6. Semgrep exits 0 on the three Jetson hook copies.
 ```
 
 </instructions>
@@ -214,5 +277,6 @@ Semgrep exits 0 on all three Jetson hook copies.
 All three matrices report every non-skipped case as expected, and drift check
 6 reports the registrations agree.
 
-`PHASE_3_VALIDATION.md` records the run and outcome.
+`PHASE_3_VALIDATION.md` records the run and outcome on the host, and the
+commit body carries the same counts into the repository.
 </verification>
