@@ -127,7 +127,7 @@ check_research_references() {
     fi
   done < <(grep -rohE 'research/[A-Za-z0-9._-]+\.md' foundation/ 2>/dev/null | sort -u || true)
 
-  [[ $fail -eq 0 ]] && log_ok "research references resolve"
+  if (( fail == 0 )); then log_ok "research references resolve"; fi
 }
 
 # Check 2: prompts reference QC IDs that exist in the Quality Contract.
@@ -160,7 +160,7 @@ check_qc_references() {
     fi
   done
 
-  [[ $fail -eq 0 ]] && log_ok "QC references resolve"
+  if (( fail == 0 )); then log_ok "QC references resolve"; fi
 }
 
 # Check 3: artifacts reference Threat IDs that exist in the threat model.
@@ -192,7 +192,7 @@ check_threat_references() {
     fi
   done
 
-  [[ $fail -eq 0 ]] && log_ok "Threat references resolve"
+  if (( fail == 0 )); then log_ok "Threat references resolve"; fi
 }
 
 # Check 4: hooks marked deterministic actually have shellcheck-clean shell.
@@ -211,7 +211,7 @@ check_hook_shell() {
   done < <(find mac/harness/hooks jetson/harness/hooks windows/harness/hooks \
     -type f -name '*.sh' 2>/dev/null || true)
 
-  [[ $fail -eq 0 ]] && log_ok "hook scripts pass shellcheck"
+  if (( fail == 0 )); then log_ok "hook scripts pass shellcheck"; fi
 }
 
 # Check 5: deployed hooks match their tracked source byte for byte.
@@ -259,7 +259,7 @@ check_deployed_hooks() {
     done
   done < <(find "$HOOK_SOURCE_DIR" -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null || true)
 
-  [[ $fail -eq 0 ]] && log_ok "deployed hooks match tracked source ($HOOK_SOURCE_DIR)"
+  if (( fail == 0 )); then log_ok "deployed hooks match tracked source ($HOOK_SOURCE_DIR)"; fi
 }
 
 # Check 6: hook registrations agree across settings sources.
