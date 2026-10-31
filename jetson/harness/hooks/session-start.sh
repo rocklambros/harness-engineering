@@ -17,7 +17,18 @@ LOG_DIR="${HOME}/.claude-harness"
 LOG_FILE="${LOG_DIR}/hook.log"
 mkdir -p "${LOG_DIR}"
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Deployed under ~/.claude/hooks/, the relative path below resolves to $HOME,
+# not the checkout, so the drift check never ran between deploys. Real
+# deploys record the checkout in harness-repo-root. The relative path stays
+# as the fallback for a hook run in place from the repo.
+REPO_ROOT_FILE="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/harness-repo-root"
+REPO_ROOT=""
+if [[ -r "${REPO_ROOT_FILE}" ]]; then
+  IFS= read -r REPO_ROOT < "${REPO_ROOT_FILE}" || true
+fi
+if [[ "${REPO_ROOT}" != /* || ! -x "${REPO_ROOT}/scripts/drift-check.sh" ]]; then
+  REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+fi
 
 # Validated Claude Code minor-version range. Update when QC.5 re-evaluation
 # completes against a new minor version.
@@ -41,6 +52,8 @@ EOF
   fi
 else
   log "SKIP drift-check.sh not executable at ${REPO_ROOT}/scripts/drift-check.sh"
+  # The log alone kept this silent for months. Say it where the operator looks.
+  echo "[session-start] Drift check skipped: no drift-check.sh at ${REPO_ROOT}/scripts. Run scripts/deploy-harness.sh from the harness checkout to record its path in ${REPO_ROOT_FILE}."
 fi
 
 # --- Claude Code version check -----------------------------------------------

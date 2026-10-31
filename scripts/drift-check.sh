@@ -11,6 +11,8 @@
 #      and the live user settings, with documented per-source extras only.
 #   7. Every file the secret gate excludes from scanning is covered by the
 #      shape gate, so an exclusion can never be both unscanned and unvalidated.
+#   8. Live user settings carry every permissions deny and ask rule the
+#      platform settings source ships. Allow rules are not checked.
 #
 # Exit codes:
 #   0  no drift found
@@ -125,7 +127,7 @@ check_research_references() {
     fi
   done < <(grep -rohE 'research/[A-Za-z0-9._-]+\.md' foundation/ 2>/dev/null | sort -u || true)
 
-  [[ $fail -eq 0 ]] && log_ok "research references resolve"
+  if (( fail == 0 )); then log_ok "research references resolve"; fi
 }
 
 # Check 2: prompts reference QC IDs that exist in the Quality Contract.
@@ -158,7 +160,7 @@ check_qc_references() {
     fi
   done
 
-  [[ $fail -eq 0 ]] && log_ok "QC references resolve"
+  if (( fail == 0 )); then log_ok "QC references resolve"; fi
 }
 
 # Check 3: artifacts reference Threat IDs that exist in the threat model.
@@ -190,7 +192,7 @@ check_threat_references() {
     fi
   done
 
-  [[ $fail -eq 0 ]] && log_ok "Threat references resolve"
+  if (( fail == 0 )); then log_ok "Threat references resolve"; fi
 }
 
 # Check 4: hooks marked deterministic actually have shellcheck-clean shell.
@@ -209,7 +211,7 @@ check_hook_shell() {
   done < <(find mac/harness/hooks jetson/harness/hooks windows/harness/hooks \
     -type f -name '*.sh' 2>/dev/null || true)
 
-  [[ $fail -eq 0 ]] && log_ok "hook scripts pass shellcheck"
+  if (( fail == 0 )); then log_ok "hook scripts pass shellcheck"; fi
 }
 
 # Check 5: deployed hooks match their tracked source byte for byte.
@@ -257,7 +259,7 @@ check_deployed_hooks() {
     done
   done < <(find "$HOOK_SOURCE_DIR" -type f \( -name '*.sh' -o -name '*.py' \) 2>/dev/null || true)
 
-  [[ $fail -eq 0 ]] && log_ok "deployed hooks match tracked source ($HOOK_SOURCE_DIR)"
+  if (( fail == 0 )); then log_ok "deployed hooks match tracked source ($HOOK_SOURCE_DIR)"; fi
 }
 
 # Check 6: hook registrations agree across settings sources.
@@ -357,7 +359,34 @@ check_secret_gate_coverage() {
     fi
   fi
 
-  [[ $fail -eq 0 ]] && log_ok "secret-gate exclusions are covered by the shape gate (self-test $(sed -n 's/^self-test: //p' <<< "$out"))"
+  # An if block, not `[[ ]] && log_ok`: that compound returns 1 on drift, and as
+  # the last command in the function it makes the function return 1, which under
+  # set -e exits before the closing summary and any later check. Commit 77db09d
+  # fixed the five checks that predate this one.
+  if [[ $fail -eq 0 ]]; then
+    log_ok "secret-gate exclusions are covered by the shape gate (self-test $(sed -n 's/^self-test: //p' <<< "$out"))"
+  fi
+}
+
+# Check 8: live permission rules include every deny and ask rule shipped.
+#
+# deploy-harness.sh diffs only the hooks block and check 6 reads only hooks,
+# so a deny rule dropped from ~/.claude/settings.json was invisible. Allows
+# are excluded on purpose: the source's project-scope allows such as
+# Read(./**) must not be pushed to user level.
+check_permission_rules() {
+  if ! command -v python3 >/dev/null 2>&1; then
+    log_warn "python3 not installed, skipping permission rule check"
+    return 0
+  fi
+  local out
+  if out="$(python3 -I scripts/check-permission-rules.py 2>&1)"; then
+    log_ok "$out"
+  else
+    while IFS= read -r line; do
+      log_drift "${line#drift: }"
+    done <<< "$out"
+  fi
 }
 
 main() {
@@ -369,6 +398,7 @@ main() {
   check_deployed_hooks
   check_hook_registrations
   check_secret_gate_coverage
+  check_permission_rules
 
   if [[ $DRIFT_FOUND -eq 1 ]]; then
     echo "${RED}drift detected, commit blocked${RESET}" >&2
