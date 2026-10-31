@@ -11,6 +11,8 @@
 #      and the live user settings, with documented per-source extras only.
 #   7. Every file the secret gate excludes from scanning is covered by the
 #      shape gate, so an exclusion can never be both unscanned and unvalidated.
+#   8. Live user settings carry every permissions deny and ask rule the
+#      platform settings source ships. Allow rules are not checked.
 #
 # Exit codes:
 #   0  no drift found
@@ -358,6 +360,25 @@ check_secret_gate_coverage() {
   fi
 
   [[ $fail -eq 0 ]] && log_ok "secret-gate exclusions are covered by the shape gate (self-test $(sed -n 's/^self-test: //p' <<< "$out"))"
+# Check 8: live permission rules include every deny and ask rule shipped.
+#
+# deploy-harness.sh diffs only the hooks block and check 6 reads only hooks,
+# so a deny rule dropped from ~/.claude/settings.json was invisible. Allows
+# are excluded on purpose: the source's project-scope allows such as
+# Read(./**) must not be pushed to user level.
+check_permission_rules() {
+  if ! command -v python3 >/dev/null 2>&1; then
+    log_warn "python3 not installed, skipping permission rule check"
+    return 0
+  fi
+  local out
+  if out="$(python3 -I scripts/check-permission-rules.py 2>&1)"; then
+    log_ok "$out"
+  else
+    while IFS= read -r line; do
+      log_drift "${line#drift: }"
+    done <<< "$out"
+  fi
 }
 
 main() {
@@ -369,6 +390,7 @@ main() {
   check_deployed_hooks
   check_hook_registrations
   check_secret_gate_coverage
+  check_permission_rules
 
   if [[ $DRIFT_FOUND -eq 1 ]]; then
     echo "${RED}drift detected, commit blocked${RESET}" >&2
