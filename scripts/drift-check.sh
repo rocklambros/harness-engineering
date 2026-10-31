@@ -9,6 +9,8 @@
 #   5. Deployed ~/.claude/hooks copies match their tracked source byte for byte.
 #   6. Hook registrations agree across the reference settings, the template,
 #      and the live user settings, with documented per-source extras only.
+#   7. Every file the secret gate excludes from scanning is covered by the
+#      shape gate, so an exclusion can never be both unscanned and unvalidated.
 #
 # Exit codes:
 #   0  no drift found
@@ -282,6 +284,82 @@ check_hook_registrations() {
   fi
 }
 
+# Check 7: the secret gate's exclusion set is covered by the shape gate.
+#
+# ~/.claude/.gitleaks.toml excludes plugin-audit/manifests/*.json from the
+# backup push scan, because a `paths` allowlist in gitleaks 8.30 is a
+# file-level exclusion and those files are digests keyed by plugin file paths,
+# which generic-api-key reads as hundreds of leaked credentials. An excluded
+# file is an unscanned file, so hooks/validate-audit-manifests.py stands in for
+# the scan and requires every value in an excluded file to be a digest.
+#
+# The original pairing hardcoded the manifest glob in backup-config.sh while
+# the config carried its own regex. Two definitions of one set: widening the
+# config without the glob would leave a path neither scanned nor validated, and
+# nothing would fail. The gate now DERIVES its set from the config, so this
+# check proves the derivation is still in place rather than comparing two
+# patterns that are no longer meant to be compared.
+check_secret_gate_coverage() {
+  local live="${HOME}/.claude"
+  local gate="${live}/hooks/validate-audit-manifests.py"
+  local backup="${live}/hooks/backup-config.sh"
+  local config="${live}/.gitleaks.toml"
+
+  # Live-only Mac files. A host without them has no exclusion to cover.
+  if [[ ! -f "$backup" && ! -f "$config" ]]; then
+    log_warn "no live backup hook or gitleaks config, skipping secret-gate coverage check"
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    log_warn "python3 not installed, skipping secret-gate coverage check"
+    return 0
+  fi
+
+  local fail=0
+
+  # A gitleaks config that excludes paths, with no gate to cover them, is the
+  # exact hole this check exists for.
+  if [[ -f "$config" && ! -f "$gate" ]]; then
+    log_drift "gitleaks config present but shape gate missing: $gate"
+    return 0
+  fi
+  if [[ ! -f "$gate" ]]; then
+    log_warn "no shape gate and no gitleaks config, nothing to cover"
+    return 0
+  fi
+
+  # The gate's own invariant suite, including the live-config sanity case that
+  # asserts no credential-bearing config file has been swept into an exclusion.
+  local out
+  if ! out="$(python3 -I "$gate" --self-test 2>&1)"; then
+    while IFS= read -r line; do
+      [[ "$line" == *FAIL* || "$line" == self-test:* ]] && log_drift "shape gate self-test: $line"
+    done <<< "$out"
+    fail=1
+  fi
+
+  # The gate has to be wired in, and wired in fail-closed. Either grep failing
+  # means an exclusion could go unvalidated at push time.
+  if [[ -f "$backup" ]]; then
+    if ! grep -q 'validate-audit-manifests.py' "$backup"; then
+      log_drift "backup-config.sh no longer invokes the shape gate; exclusions would go unvalidated"
+      fail=1
+    fi
+    if ! grep -q 'refusing to push unscanned exclusions' "$backup"; then
+      log_drift "backup-config.sh lost its fail-closed guard for a missing shape gate"
+      fail=1
+    fi
+    # The coupling this check replaced: a path pattern hardcoded into the
+    # staging query instead of derived from the config.
+    if grep -qE "diff --cached[^|]*plugin-audit" "$backup"; then
+      log_drift "backup-config.sh hardcodes a plugin-audit path pattern again; derive it from .gitleaks.toml"
+      fail=1
+    fi
+  fi
+
+  [[ $fail -eq 0 ]] && log_ok "secret-gate exclusions are covered by the shape gate (self-test $(sed -n 's/^self-test: //p' <<< "$out"))"
+}
+
 main() {
   echo "Running drift check from $REPO_ROOT"
   check_research_references
@@ -290,6 +368,7 @@ main() {
   check_hook_shell
   check_deployed_hooks
   check_hook_registrations
+  check_secret_gate_coverage
 
   if [[ $DRIFT_FOUND -eq 1 ]]; then
     echo "${RED}drift detected, commit blocked${RESET}" >&2
