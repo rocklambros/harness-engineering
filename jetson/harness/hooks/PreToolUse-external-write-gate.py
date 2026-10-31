@@ -20,10 +20,17 @@ Exemption: Four classes are exempt because AP.11's "not reversible from
            on most sessions, not project source, not irreversible. Gating them
            produces high-frequency prompts that train reflexive approval and
            erode the gate's signal for writes that matter. The class today:
-             a. Auto-memory: ~/.claude/projects/<encoded-cwd>/memory/... for
-                the current session's project only. Memory for another
-                project is read into that project's next session, so a
-                write there is a persistence path and asks.
+             a. Auto-memory: Markdown files under
+                ~/.claude/projects/<project>/memory/, for any project, not
+                only the session's own. Operator decision, October 31,
+                2026: cross-repo work writes a sibling project's memory as
+                a matter of course. Markdown only, matching the scope of
+                Claude Code's own protected-path exception for these
+                directories, so a script dropped in a memory directory
+                still asks. Residual risk: a memory file is read into that
+                project's next session, so an injected write is a
+                cross-session persistence path. Recorded in foundation/01
+                under T.3.
              b. Plan files: ~/.claude/plans/...
            Both are judged on resolved paths so a symlink planted under
            plans/ or memory/ cannot carry the exemption into hooks/.
@@ -140,10 +147,15 @@ Verify (ask, outside cwd):
         python3 PreToolUse-external-write-gate.py
     # exit 0, stdout: hookSpecificOutput with permissionDecision=ask
 
-Verify (allow, auto-memory store):
-    echo "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$HOME/.claude/projects/x/memory/MEMORY.md\"},\"cwd\":\"$PWD\"}" | \
+Verify (allow, any project's auto-memory Markdown):
+    echo "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$HOME/.claude/projects/-Users-x-other-repo/memory/MEMORY.md\"},\"cwd\":\"$PWD\"}" | \
         python3 PreToolUse-external-write-gate.py
     # exit 0, empty stdout
+
+Verify (ask, non-Markdown in an auto-memory directory):
+    echo "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$HOME/.claude/projects/-Users-x-other-repo/memory/run.sh\"},\"cwd\":\"$PWD\"}" | \
+        python3 PreToolUse-external-write-gate.py
+    # exit 0, stdout: hookSpecificOutput with permissionDecision=ask
 
 Verify (allow, plan file):
     echo "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$HOME/.claude/plans/foo.md\"},\"cwd\":\"$PWD\"}" | \
@@ -213,7 +225,6 @@ Owner: harness-engineering (Phase 3, 2026-05-11; worktree exemption 2026-05-23;
 
 import json
 import os
-import re
 import subprocess
 import sys
 
@@ -416,14 +427,23 @@ def is_scratch_root(abs_path: str, home: str) -> bool:
     return any(_is_at_or_under(real_target, root) for root in _SCRATCH_ROOTS)
 
 
-def is_claude_code_managed_store(abs_path: str, home: str, abs_cwd: str) -> bool:
+def is_claude_code_managed_store(abs_path: str, home: str) -> bool:
     # Class: Claude Code's own managed, regenerable write stores. See the
-    # Exemption note in the module header. Today: auto-memory under
-    # ~/.claude/projects/<encoded-cwd>/memory/ for the current session's
-    # project only, and plan files under ~/.claude/plans/. Both are
-    # compared on resolved paths so a planted symlink cannot carry the
-    # exemption elsewhere. Memory for another project is read into that
-    # project's next session, which is a persistence path, so it asks.
+    # Exemption note in the module header. Today: Markdown files in any
+    # auto-memory directory under ~/.claude/projects/<project>/memory/, and
+    # plan files under ~/.claude/plans/. Both are compared on resolved paths
+    # so a planted symlink cannot carry the exemption elsewhere.
+    #
+    # Operator decision, October 31, 2026: any project's memory directory,
+    # not only the current session's. Cross-repo work (the master's program
+    # coursework, the cxbom repositories) writes memory for a sibling
+    # project as a matter of course, and gating that produced a prompt on
+    # ordinary work. The scoping that landed the day before is withdrawn.
+    #
+    # The exemption covers Markdown only, which is the same scope Claude
+    # Code gives its own protected-path exception for these directories.
+    # Memory files are Markdown, so the restriction costs nothing here, and
+    # a script or a binary dropped into a memory directory still asks.
     claude_root = os.path.realpath(os.path.join(home, ".claude"))
     try:
         real = os.path.realpath(abs_path)
@@ -434,21 +454,13 @@ def is_claude_code_managed_store(abs_path: str, home: str, abs_cwd: str) -> bool
         return True
     projects_root = os.path.join(claude_root, "projects")
     if _is_at_or_under(real, projects_root) and real != projects_root:
-        rel = os.path.relpath(real, projects_root)
-        parts = rel.split(os.sep)
-        # Claude Code names the project directory after the cwd with every
-        # character that is not a letter or a digit replaced by one hyphen,
-        # runs preserved: /Users/x/github_projects/app becomes
-        # -Users-x-github-projects-app, and /Users/x/.claude becomes
-        # -Users-x--claude. Derived October 30, 2026 by comparing every
-        # directory under ~/.claude/projects against a cwd read from its own
-        # transcripts: this rule matched 23 of 23, replacing only slash and
-        # dot matched 6, and collapsing runs matched 19. If a future release
-        # changes the rule, this comparison stops matching and the write
-        # asks, which is the safe direction: a visible prompt, not a silent
-        # exemption for another project's memory.
-        encoded = re.sub(r"[^A-Za-z0-9]", "-", abs_cwd)
-        if len(parts) >= 2 and parts[1] == "memory" and parts[0] == encoded:
+        parts = os.path.relpath(real, projects_root).split(os.sep)
+        # <project>/memory/<file>.md, at any depth below memory/.
+        if (
+            len(parts) >= 3
+            and parts[1] == "memory"
+            and parts[-1].lower().endswith(".md")
+        ):
             return True
     return False
 
@@ -487,7 +499,7 @@ def main() -> int:
         common = ""
     if common == real_cwd:
         return 0
-    if is_claude_code_managed_store(abs_path, home, abs_cwd):
+    if is_claude_code_managed_store(abs_path, home):
         return 0
     if is_scratch_root(abs_path, home):
         return 0

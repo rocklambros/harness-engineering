@@ -61,15 +61,31 @@ CASES = [
         {},
         None,
     ),
-    # The regression: the underscore in the cwd must already be a hyphen.
+    # Operator decision, October 31, 2026: any project's memory, for cross-repo work.
     (
-        f"{HOME}/.claude/projects/{CWD.replace(chr(47), chr(45))}/memory/MEMORY.md",
-        ASK,
+        f"{HOME}/.claude/projects/-Users-klambros-github-projects-cxbom/memory/MEMORY.md",
+        ALLOW,
         {},
         None,
     ),
+    (
+        f"{HOME}/.claude/projects/-Some-other-project/memory/notes/deep.md",
+        ALLOW,
+        {},
+        None,
+    ),
+    (
+        f"{HOME}/.claude/projects/{CWD.replace(chr(47), chr(45))}/memory/MEMORY.md",
+        ALLOW,
+        {},
+        None,
+    ),
+    # Markdown only, and memory/ only: a script or a stray file still asks.
+    (f"{HOME}/.claude/projects/-Some-other-project/memory/run.sh", ASK, {}, None),
+    (f"{HOME}/.claude/projects/-Some-other-project/memory/payload.py", ASK, {}, None),
     (f"{HOME}/.claude/projects/{project_dir(CWD)}/notes.txt", ASK, {}, None),
-    (f"{HOME}/.claude/projects/-Some-other-project/memory/MEMORY.md", ASK, {}, None),
+    (f"{HOME}/.claude/projects/{project_dir(CWD)}/memory", ASK, {}, None),
+    (f"{HOME}/.claude/projects/-Some-other-project/transcript.jsonl", ASK, {}, None),
     # scratch roots, every spelling, with and without $TMPDIR
     ("/tmp/x.txt", ALLOW, {}, None),
     ("/tmp/claude-501/foo/scratchpad/x.txt", ALLOW, {}, None),

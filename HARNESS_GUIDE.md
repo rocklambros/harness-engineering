@@ -99,7 +99,7 @@ Two hooks and the permission rules decide, before any model judgment, which file
 
 A write inside the working directory passes. Outside it, the gate stays silent for four classes and asks for everything else.
 
-Claude Code's own managed stores pass: auto-memory under `~/.claude/projects/<project>/memory/` and plan files under `~/.claude/plans/`. They are regenerable and written on most sessions.
+Claude Code's own managed stores pass: Markdown files under `~/.claude/projects/<project>/memory/`, for any project rather than only the session's own, and plan files under `~/.claude/plans/`. They are regenerable and written on most sessions. Cross-repo work writes a sibling project's memory as a matter of course, which is the operator decision of October 31, 2026. The exemption is Markdown only, the same scope Claude Code gives its own protected-path exception there, so a script dropped into a memory directory still asks.
 
 Scratch roots pass: `/tmp`, `$TMPDIR`, and on macOS the per-user temp directory that `getconf DARWIN_USER_TEMP_DIR` reports (`/var/folders/<xx>/<hash>/T`). The `getconf` lookup matters because a session launched from the Desktop app or launchd has no `$TMPDIR`. These directories are OS-cleaned and never under version control. `/var/tmp` is not a scratch root because it survives reboot. The whole of `/private` is not a scratch root either: it also holds persistent per-user application state and world-writable system directories, which an October 30, 2026 premortem measured before the exemption was narrowed.
 

@@ -114,7 +114,7 @@ When you commit, the pre-commit hooks run the full SAST stack. If anything fails
 
 Most of the time the harness is invisible. Three kinds of action make it visible, and knowing which is which saves a debugging session.
 
-**Allowed without a prompt.** Reads anywhere. Writes inside the working directory. Writes to scratch space: `/tmp`, `$TMPDIR`, and on macOS the per-user temp directory under `/var/folders/.../T`, which is where Claude Code's own scratchpad and most tool output land. Writes to Claude's auto-memory and plan files. Writes to ordinary source in any other git repository on disk. Deletes of children of protected paths, such as `rm -rf build` or `rm -rf /tmp/x`.
+**Allowed without a prompt.** Reads anywhere. Writes inside the working directory. Writes to scratch space: `/tmp`, `$TMPDIR`, and on macOS the per-user temp directory under `/var/folders/.../T`, which is where Claude Code's own scratchpad and most tool output land. Writes to Claude's plan files and to any project's auto-memory Markdown, including a sibling repository's, which cross-repo work needs. Writes to ordinary source in any other git repository on disk. Deletes of children of protected paths, such as `rm -rf build` or `rm -rf /tmp/x`.
 
 **Asked.** A write outside all of the above, such as `~/Documents/notes.txt`. A write to a file that loads or runs in a later session: any `.claude/` directory, `.mcp.json`, `CLAUDE.md`, a hook script, anything under `.git`, even when it sits under `/tmp`. A write to `/var/tmp` or to the rest of `/private`. A force push. A write to a `CLAUDE.md` or `foundation/` file in this repository (the cached-prefix gate). An unpinned package install or a `curl | sh` pattern, unless `HARNESS_AUTONOMOUS_MODE=1` silences it.
 
