@@ -106,6 +106,8 @@ Hook event coverage is verified against the current Claude Code event list (Liu 
 
 Patch-version bumps don't trigger re-evaluation by default but are noted in the JOURNEY entry that covers the bump.
 
+Auto-update stays on (operator decision, October 31, 2026). A minor bump can land before the re-evaluation, so the re-evaluation starts when `session-start.sh` first warns that the installed version is outside the pin, and `scripts/claude-unattended.sh` refuses unattended runs until the pin moves. The trade is a window where interactive sessions run on unvalidated hook semantics, accepted in exchange for upstream security fixes landing without operator action.
+
 ---
 
 ## How the Quality Contract is enforced
