@@ -359,7 +359,15 @@ check_secret_gate_coverage() {
     fi
   fi
 
-  [[ $fail -eq 0 ]] && log_ok "secret-gate exclusions are covered by the shape gate (self-test $(sed -n 's/^self-test: //p' <<< "$out"))"
+  # An if block, not `[[ ]] && log_ok`: that compound returns 1 on drift, and as
+  # the last command in the function it makes the function return 1, which under
+  # set -e exits before the closing summary and any later check. Commit 77db09d
+  # fixed the five checks that predate this one.
+  if [[ $fail -eq 0 ]]; then
+    log_ok "secret-gate exclusions are covered by the shape gate (self-test $(sed -n 's/^self-test: //p' <<< "$out"))"
+  fi
+}
+
 # Check 8: live permission rules include every deny and ask rule shipped.
 #
 # deploy-harness.sh diffs only the hooks block and check 6 reads only hooks,
