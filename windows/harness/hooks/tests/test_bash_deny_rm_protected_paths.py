@@ -398,7 +398,12 @@ CASES = [
     ('export PATH="$HOME/.local/bin:$PATH" && rm -rf ~/.cache/uv', PROJ, ALLOW, None),
     ("source .venv/bin/activate && rm -rf ~/.cache/pip", PROJ, ALLOW, None),
     ("source .venv/bin/activate && rm -rf ~", PROJ, DENY, None),
-    ("HOME=/home; rm -rf ~/rock/proj", PROJ, DENY, None),
+    # Linux-gated: the DENY holds only where the real home is /home/<user>, so
+    # that PROJ is /home/<user>/proj and this command's own HOME=/home literal
+    # resolves ~/rock/proj onto the working directory. On darwin PROJ is
+    # /Users/<user>/proj, no candidate resolution of the rebound HOME lands on a
+    # protected path, and allowing it is correct. Caught on the Mac run.
+    ("HOME=/home; rm -rf ~/rock/proj", PROJ, DENY, "linux"),
     ('echo "the source of truth"; rm -rf ~/proj/build', PROJ, ALLOW, None),
     ("git add . && git commit -F - <<'EOF'\nnever rm -rf ~\nEOF", PROJ, ALLOW, None),
     ('n=HOME; export "$n=/"; rm -rf ~/usr', PROJ, DENY, None),
