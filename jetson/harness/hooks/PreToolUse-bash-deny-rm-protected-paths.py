@@ -102,11 +102,20 @@ from the hook's environment, `$PWD` after cd tracking, and a variable
 bound by `for X in <literals>` on the same line resolve, plain or with a
 `:-` default (both values are judged). Any other modifier (`%`, `#`, `/`,
 `:+`, `!`) can yield an unrelated path, an ancestor included, so it is
-unresolved. A name the command assigns, exports, unsets, reads, or binds
-anywhere (`X=`, `unset X`, `read X`, `printf -v X`, `${X:=}`, `declare X`,
+unresolved. A plain reference later in the word (`./$d`, `$S/$x`)
+resolves the same way. In a flat command (no block, loop, or function),
+a name assigned exactly once as its own statement with a literal value
+(`S=/tmp/x`, `D=$S/run-$$`, `t=$(mktemp -d)`) binds where that statement
+runs, so `S=/tmp/x; rm -rf $S/y` judges /tmp/x/y and a use before the
+assignment stays unknown. `$CLAUDE_PROJECT_DIR` resolves from the hook's
+environment like `$TMPDIR`. Any other name the command assigns, exports,
+unsets, reads, or binds anywhere (`X=`, `unset X`, `read X`, `printf -v X`, `${X:=}`, `declare X`,
 `for HOME in`) is unresolved for the whole command, and a rebound HOME
-makes `~` unresolved too. `source`, `.`, or `eval` in command position can
-set any name, so every name is unresolved in that command, and
+makes `~` judged both under the real home and under / (`~/x` with an
+unknown HOME), unless its tail ends a protected path. `export
+PATH="$HOME/bin:$PATH"` only reads HOME. `source`, `.`, or `eval` in
+command position, outside quotes, can set any name, so every name is
+unresolved in that command, and
 `env -u X` unsets X for the program it runs. A non-recursive rm of an
 unresolved target denies when its literal tail, placed under home or
 under /, lands on a credential store or config file (`$X/.ssh/id_rsa`),
@@ -133,16 +142,29 @@ Scope: children of protected paths are not gated. `rm -rf /tmp/build`,
 through to the permission mode in force. Scoped cleanup is the everyday
 case the harness must not tax.
 
-Parsing: heredoc bodies are removed first so a document that quotes a
+Parsing: one lexer reads quotes, `$'...'`, escapes, and word-initial `#`
+comments the way bash does, and every scanner below uses it. Heredoc
+bodies are removed first so a document that quotes a
 dangerous command (this file, the rule docs) can be written through a
-heredoc. A body whose owning line feeds it to a shell, eval, or source
-(`bash <<EOF`, `cat <<EOF | sh`) is a script and is scanned. The rest of
+heredoc. The delimiter is compared with its quotes and backslashes
+removed, as bash compares it, and a << inside an open (( is a shift. A
+body whose owning line feeds it to a shell, or to eval, source, or . in
+command position (`bash <<EOF`, `cat <<EOF | sh`), is a script and is
+scanned. The rest of
 the operator line stays, so `cat <<EOF; rm -rf ~` is seen. The command is
 split into simple commands on the chain operators outside quotes,
 parentheses, and backticks. A `( ... )` group and each $(...), <(...),
 >(...), or backtick body is scanned as a unit with its own copy of the
 directory state, so `(cd /; rm -rf *)` judges `*` against `/`. More than
-32 nested groups deny. Each segment is tokenized with shlex. If
+32 nested groups deny. A function, case arm, trap, coproc, select, eval,
+source, ., or script on stdin makes the cwd and every name unknown from
+that segment on. A trap action and the -c argument of script, su,
+runuser, or flock are scanned as scripts, as is a <(...) handed to a
+shell or source. xargs with a recursive remover denies unless its
+targets come from a pipe the hook can read. A remote program (ssh,
+docker) exempts what follows only in command position and, for a
+container, without a bind mount. A command over 512 KB or 200 heredocs
+denies outright. Each segment is tokenized with shlex. If
 the quotes never balance the split is redone with quotes ignored, so a
 stray apostrophe cannot hide a chained rm, `r''m` is seen as `rm`
 because the check runs on tokens, `RM` and `/bin/RM` fold to `rm` on a
@@ -211,6 +233,8 @@ import sys
 REMOVERS = {"rm", "rmdir", "unlink", "shred", "srm"}
 NON_RECURSIVE_REMOVERS = {"unlink", "shred", "srm"}
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+# Programs that hand their -c argument to a shell: `script -qc 'cmd'`.
+C_RUNNERS = {"script", "su", "runuser", "flock"}
 CD_COMMANDS = {"cd", "pushd"}
 # Programs after which a following rm runs on another filesystem.
 REMOTE_PROGRAMS = {
@@ -252,6 +276,10 @@ _GLOB_CHARS = set("*?[{")
 _DATA_VOLUME = "/System/Volumes/Data"
 _MAX_DEPTH = 3
 _MAX_GROUPS = 32
+_MAX_CANDIDATES = 256
+_MAX_COMMAND = 512 * 1024
+_MAX_HEREDOCS = 200
+_RECURSIVE = re.compile(r"--recursive|-[A-Za-z]*[rR][A-Za-z]*")
 _ALWAYS_DENY = {"credential store", "config file", "config root"}
 _FIND_DELETERS = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint"}
 
@@ -279,7 +307,7 @@ _VAR = re.compile(
 # at every nesting level, so a match inside a quoted string only costs a
 # deny. Every pattern is linear: the hook has a 10 second budget.
 _REBIND = re.compile(
-    r"\b([A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]]*\])?\+?="
+    r"\b([A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]\n]{0,64}\])?\+?="
     r"|\$\{([A-Za-z_][A-Za-z0-9_]*):?="
     r"|\bprintf\s+-v\s*([A-Za-z_][A-Za-z0-9_]*)"
     r"|\b(?:for|select)\s+(HOME|PWD|TMPDIR|CDPATH)\b"
@@ -289,10 +317,29 @@ _REBIND_CMD = re.compile(
     r"|local|readonly)\s([^;&|\n]*)"
 )
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_WRITTEN_NAME = re.compile(r"(?<![$\w{])[A-Za-z_][A-Za-z0-9_]*")
 # `source`, `.`, and `eval` in command position can set any name, so every
 # name counts as rebound. `env -u NAME` unsets one for the program it runs.
+_CMD_POS = (
+    r"(?:^|[;&|(!{\n]|\b(?:then|do|else|elif|if|while|until|builtin|command"
+    r"|time|exec)\b)\s*"
+)
+_REBIND_SOURCE = re.compile(_CMD_POS + r"(?:source|\.|eval)\s")
+# A name the hook cannot read: `export "$n=~"`, `printf -v "$n"`,
+# `declare -n r=$n`.
 _REBIND_ALL = re.compile(
-    r"(?:^|[;&|(!{\n]|\b(?:then|do|else)\b)\s*(?:source|\.|eval)\s"
+    r"(?:^|[\s;&|(])[^\s=;&|()]*\$[^\s=;&|()]*="
+    r"|\bprintf\s+(?:-\S+\s+)*-v\s*[\"']?\$"
+    r"|\b(?:declare|typeset|local)\s[^;&|\n]*-\w*n\w*\s[^;&|\n]*\$"
+)
+# Constructs that can move the directory or set names where this scanner
+# does not follow: functions, case arms, traps, coprocesses, select, eval,
+# source, and a script read from stdin. Any of them makes the cwd and every
+# name unknown from that segment on. _apply_cd handles the directory stack.
+_OPAQUE = re.compile(
+    _CMD_POS + r"(?:source|\.|eval|trap|coproc|select|case|function)\s"
+    r"|[A-Za-z_][\w-]*\s*\(\s*\)"
+    r"|/dev/stdin|/dev/fd/"
 )
 _ENV_CALL = re.compile(r"\benv\s[^;&|\n]*")
 _ENV_UNSET = re.compile(r"(?:^|\s)(?:-u|--unset)[=\s]?\s*([A-Za-z_][A-Za-z0-9_]*)")
@@ -355,48 +402,117 @@ def _scratch_roots(home: str) -> list:
     return roots
 
 
-def _find_heredoc(text: str):
-    # Locate the first heredoc operator outside quotes. A << inside quotes
-    # or directly after a digit or identifier (1<<3, $((x<<2))) is not a
-    # heredoc. Returns (operator start, body start, terminator) or None.
-    in_single = in_double = False
-    i, n = 0, len(text)
+_ACTIVE, _QUOTED, _COMMENT = 0, 1, 2
+
+
+def _lex(text: str):
+    # Per-character state the way bash reads it: _ACTIVE syntax, _QUOTED
+    # text (inside '...', "...", $'...', or after a backslash), or a
+    # _COMMENT from a word-initial # to the end of the line. Every scanner
+    # below reads this one view, so a `#` or a `$'\''` cannot make the hook
+    # and bash disagree about where a quote ends. Returns (states,
+    # quotes_balanced).
+    n = len(text)
+    states = [_QUOTED] * n
+    quote = None
+    i = 0
     while i < n:
         c = text[i]
-        if c == "\\" and not in_single and i + 1 < n:
+        if quote == "'":
+            quote = None if c == "'" else quote
+            i += 1
+            continue
+        if quote == "$'":
+            if c == "\\":
+                i += 2
+                continue
+            quote = None if c == "'" else quote
+            i += 1
+            continue
+        if c == "\\":
             i += 2
             continue
-        if c == "'" and not in_double:
-            in_single = not in_single
-        elif c == '"' and not in_single:
-            in_double = not in_double
-        elif (
+        if quote == '"':
+            quote = None if c == '"' else quote
+            i += 1
+            continue
+        if c == "'":
+            ansi = i > 0 and text[i - 1] == "$" and states[i - 1] == _ACTIVE
+            quote = "$'" if ansi else "'"
+        elif c == '"':
+            quote = '"'
+        elif c == "#" and (i == 0 or text[i - 1] in " \t\n;&|()"):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            states[i:j] = [_COMMENT] * (j - i)
+            i = j
+            continue
+        else:
+            states[i] = _ACTIVE
+        i += 1
+    return states, quote is None
+
+
+def _in_arithmetic(text: str, i: int) -> bool:
+    # `$(( 1 << X ))` shifts. An unclosed (( earlier on the line means the
+    # << is arithmetic, and reading it as a heredoc would hide the lines
+    # after it as a body.
+    line = text[text.rfind("\n", 0, i) + 1 : i]
+    return line.count("((") > line.count("))")
+
+
+def _find_heredoc(text: str):
+    # Locate the first heredoc operator in active syntax. A << inside
+    # quotes or a comment, or directly after a digit or identifier (1<<3,
+    # $((x<<2))), is not a heredoc. Returns (operator start, operator end,
+    # terminator, strips_tabs) or None. The terminator is the delimiter
+    # word with its quotes and backslashes removed, as bash compares it.
+    states, _ = _lex(text)
+    for i, c in enumerate(text):
+        if (
             c == "<"
-            and not in_single
-            and not in_double
+            and states[i] == _ACTIVE
             and text.startswith("<<", i)
             and not text.startswith("<<<", i)
             and (i == 0 or text[i - 1] != "<")
             and (i == 0 or text[i - 1].isspace() or text[i - 1] in ";|&(")
+            and not _in_arithmetic(text, i)
         ):
             m = _HEREDOC_WORD.match(text, i)
             if m:
-                return i, m.end(), (m.group(1) or m.group(2) or m.group(3) or "")
-        i += 1
+                word = m.group(1) or m.group(2) or m.group(3) or ""
+                term = re.sub(r"[\"'\\]", "", word)
+                return i, m.end(), term, text.startswith("<<-", i)
     return None
+
+
+def _is_remote(tokens: list, i: int) -> bool:
+    # A remote or container program in command position runs what follows
+    # on another filesystem. As an option argument (`sudo -g docker`,
+    # `env -u ssh`) it is only a word, and a bind mount (`docker run -v
+    # ~:/h`) puts this filesystem inside the container.
+    prog = _prog(tokens[i])
+    if prog not in REMOTE_PROGRAMS or (i > 0 and tokens[i - 1].startswith("-")):
+        return False
+    if prog in ("docker", "podman", "nerdctl"):
+        mounts = ("-v", "--volume", "--mount")
+        return not any(t.startswith(mounts) for t in tokens[i + 1 :])
+    return True
 
 
 def _feeds_shell(line: str) -> bool:
     # True when the line that owns a heredoc runs its body: `bash <<EOF`,
-    # `cat <<EOF | sh`, `eval "$(cat <<EOF`. A remote program first
-    # (`ssh host bash <<EOF`) runs it on another filesystem.
-    for word in re.split(r"[\s;&|()`$]+", line):
-        prog = _prog(word.strip("\"'"))
-        if prog in REMOTE_PROGRAMS:
+    # `cat <<EOF | sh`, `eval "$(cat <<EOF`. A remote program in command
+    # position first (`ssh host bash <<EOF`) runs it on another filesystem.
+    words = [w.strip("\"'") for w in re.split(r"[\s;&|()`$]+", line) if w]
+    for i, word in enumerate(words):
+        if _is_remote(words, i):
             return False
-        if prog in SHELLS or prog in ("eval", "source", "."):
+        if _prog(word) in SHELLS:
             return True
-    return False
+    # eval, source, and . only in command position: `git add . && git
+    # commit -F - <<EOF` does not run its message.
+    return _REBIND_SOURCE.search(_mask_quotes(line)) is not None
 
 
 def _strip_heredocs(cmd: str, fed: list = None) -> str:
@@ -410,7 +526,7 @@ def _strip_heredocs(cmd: str, fed: list = None) -> str:
         found = _find_heredoc(out)
         if not found:
             return out
-        op_start, op_end, term = found
+        op_start, op_end, term, strips_tabs = found
         body_start = out.find("\n", op_end)
         if body_start < 0:
             out = out[:op_start] + " " + out[op_end:]
@@ -420,7 +536,7 @@ def _strip_heredocs(cmd: str, fed: list = None) -> str:
         while pos <= len(out):
             nl = out.find("\n", pos)
             line = out[pos:] if nl < 0 else out[pos:nl]
-            if line.strip() == term:
+            if (line.lstrip("\t") if strips_tabs else line) == term:
                 end = len(out) if nl < 0 else nl
                 break
             if nl < 0:
@@ -430,7 +546,12 @@ def _strip_heredocs(cmd: str, fed: list = None) -> str:
             out = out[:op_start] + " " + out[op_end:]
             continue
         line_start = out.rfind("\n", 0, op_start) + 1
-        if fed is not None and _feeds_shell(out[line_start:body_start]):
+        owner = out[line_start:body_start]
+        if owner.rstrip().endswith(("|", "&&", "||", "\\")):
+            # `cat <<EOF |` with `bash` on the line after the body.
+            nxt = out.find("\n", end + 1)
+            owner += " " + out[end + 1 : len(out) if nxt < 0 else nxt]
+        if fed is not None and _feeds_shell(owner):
             fed.append(out[body_start + 1 : pos])
         out = out[:op_start] + " " + out[op_end:body_start] + out[end:]
 
@@ -471,15 +592,18 @@ def _substitutions(text: str) -> list:
     return found
 
 
-def _split_segments(cmd: str) -> list:
-    # Split on chain operators outside quotes. If the quotes never balance,
-    # the shell would reject the command or read it differently than this
-    # scanner did, so the split is redone with quotes ignored. That keeps
-    # the scanner deny-biased: a removal behind a stray apostrophe is seen.
+def _split_segments(cmd: str):
+    # Split on chain operators outside quotes. If the quotes, parentheses,
+    # or backticks never balance, the shell would reject the command or
+    # read it differently than this scanner did, so the split is redone
+    # with quotes ignored, and the caller treats the cwd and every name as
+    # unknown. That keeps the scanner deny-biased: a removal behind a stray
+    # apostrophe is seen and judged against no known directory. Returns
+    # (segments, balanced).
     segments, balanced = _split_quoted(cmd, honor_quotes=True)
     if not balanced:
         segments, _ = _split_quoted(cmd, honor_quotes=False)
-    return segments
+    return segments, balanced
 
 
 def _split_quoted(cmd: str, honor_quotes: bool):
@@ -489,31 +613,33 @@ def _split_quoted(cmd: str, honor_quotes: bool):
     # not split, so a group keeps its own cd state: `(cd /; rm -rf *)` is
     # one segment that scan() judges as a unit. Returns
     # ([(segment, is_subshell, is_pipe_sink, raw)], balanced).
+    n = len(cmd)
+    if honor_quotes:
+        states, balanced = _lex(cmd)
+    else:
+        states, balanced = [_ACTIVE] * n, True
     segments = []
     buf = []
-    in_single = in_double = in_tick = False
+    in_tick = False
     nest = 0
     pipe_sink = False
-    i, n = 0, len(cmd)
 
-    def flush(next_is_pipe: bool):
+    def flush(next_is_pipe: bool, newline: bool = False):
         nonlocal buf, pipe_sink
+        if newline and not "".join(buf).strip():
+            # A blank line after `|` or `&&` continues the pipeline.
+            return
         segments.append(("".join(buf), pipe_sink))
         buf = []
         pipe_sink = next_is_pipe
 
+    i = 0
     while i < n:
         c = cmd[i]
-        if c == "\\" and not in_single and i + 1 < n:
-            buf.append(c)
-            buf.append(cmd[i + 1])
-            i += 2
+        if states[i] == _COMMENT:
+            i += 1
             continue
-        if honor_quotes and c == "'" and not in_double:
-            in_single = not in_single
-        elif honor_quotes and c == '"' and not in_single:
-            in_double = not in_double
-        elif honor_quotes and not in_single and not in_double:
+        if states[i] == _ACTIVE and honor_quotes:
             if c == "`":
                 in_tick = not in_tick
             elif c == "(":
@@ -521,7 +647,7 @@ def _split_quoted(cmd: str, honor_quotes: bool):
             elif c == ")":
                 # `case x in a)` closes nothing.
                 nest = max(0, nest - 1)
-        if not in_single and not in_double and not in_tick and nest == 0:
+        if states[i] == _ACTIVE and not in_tick and nest == 0:
             if cmd.startswith("&&", i) or cmd.startswith("||", i):
                 flush(False)
                 i += 2
@@ -531,7 +657,7 @@ def _split_quoted(cmd: str, honor_quotes: bool):
                 i += 1
                 continue
             if c in ";\n":
-                flush(False)
+                flush(False, newline=c == "\n")
                 i += 1
                 continue
             if c == "&":
@@ -546,47 +672,52 @@ def _split_quoted(cmd: str, honor_quotes: bool):
     segments.append(("".join(buf), pipe_sink))
     cleaned = []
     for seg, sink in segments:
-        subshell = seg.lstrip().startswith("(")
-        text = seg.strip(" \t()")
-        # A brace group `{ cmd; }` is delimiter noise. A brace list
-        # `{rm,-rf,~}` is a token the tokenizer expands, so it keeps its
-        # braces: only a `{` followed by whitespace and a `}` preceded by
-        # whitespace or `;` are stripped.
-        if text.startswith("{") and (len(text) == 1 or text[1].isspace()):
-            text = text[1:].lstrip()
-        if text.endswith("}") and (
-            len(text) == 1 or text[-2].isspace() or text[-2] == ";"
-        ):
-            text = text[:-1].rstrip()
-        text = text.strip(" \t")
+        text = _clean_segment(seg)
         if text:
-            cleaned.append((text, subshell, sink, seg))
-    return cleaned, not (in_single or in_double or in_tick or nest)
+            cleaned.append((text, seg.lstrip().startswith("("), sink, seg))
+    return cleaned, balanced and not in_tick and not nest
 
 
-_GROUP_LEAD = re.compile(r"^(?:(?:!|if|elif|while|until|then|do|else|time)\s+)*")
+def _clean_segment(seg: str) -> str:
+    text = seg.strip(" \t()")
+    # A brace group `{ cmd; }` is delimiter noise. A brace list
+    # `{rm,-rf,~}` is a token the tokenizer expands, so it keeps its
+    # braces: only a `{` followed by whitespace and a `}` preceded by
+    # whitespace or `;` are stripped.
+    if text.startswith("{") and (len(text) == 1 or text[1].isspace()):
+        text = text[1:].lstrip()
+    if text.endswith("}") and (len(text) == 1 or text[-2].isspace() or text[-2] == ";"):
+        text = text[:-1].rstrip()
+    return text.strip(" \t")
 
 
-def _group_body(raw: str):
-    # The inside of a `( ... )` group that opens the segment, or None. The
-    # group runs in a subshell, so its cd and removals share one state.
-    s = _GROUP_LEAD.sub("", raw.strip())
-    if not s.startswith("("):
-        return None
-    depth, in_single, in_double = 0, False, False
-    for j, c in enumerate(s):
-        if c == "'" and not in_double:
-            in_single = not in_single
-        elif c == '"' and not in_single:
-            in_double = not in_double
-        elif not in_single and not in_double:
-            if c == "(":
-                depth += 1
-            elif c == ")":
-                depth -= 1
-                if depth == 0:
-                    return s[1:j]
-    return None
+def _groups(raw: str):
+    # Every `( ... )` group in the segment that is not a substitution
+    # ($(, <(, >() or an array literal (a=( )), wherever it sits:
+    # `(cd /; rm -rf *)`, `time -p ( ... )`, `coproc ( ... )`. Each runs in
+    # a subshell, so its cd and removals share one state. Returns (bodies,
+    # raw with the groups blanked) so the caller still judges the rest of
+    # the segment and its substitutions.
+    states, _ = _lex(raw)
+    bodies, spans = [], []
+    depth, start = 0, None
+    for j, c in enumerate(raw):
+        if states[j] != _ACTIVE:
+            continue
+        if c == "(":
+            if depth == 0:
+                start = None if j > 0 and raw[j - 1] in "$<>=" else j
+            depth += 1
+        elif c == ")" and depth:
+            depth -= 1
+            if depth == 0 and start is not None:
+                if raw[start + 1 : j].strip():
+                    bodies.append(raw[start + 1 : j])
+                spans.append((start, j))
+    rest = raw
+    for s, e in reversed(spans):
+        rest = rest[:s] + " " * (e - s + 1) + rest[e + 1 :]
+    return bodies, rest
 
 
 def _tokenize(segment: str) -> list:
@@ -597,6 +728,11 @@ def _tokenize(segment: str) -> list:
         tokens = [t.strip("\"'") for t in segment.split()]
     expanded = []
     for tok in tokens:
+        if "<<<" in tok[1:]:
+            # `bash<<<'rm -rf ~'` is a shell reading a here-string.
+            head, tail = tok.split("<<<", 1)
+            expanded.extend([head, "<<<" + tail])
+            continue
         m = _BRACE_LIST.match(tok)
         if m:
             expanded.extend(part for part in m.group(1).split(",") if part)
@@ -651,21 +787,58 @@ def _rebound(text: str) -> set:
     for m in _REBIND.finditer(text):
         names.update(g for g in m.groups() if g)
     for m in _REBIND_CMD.finditer(text):
-        names.update(_NAME.findall(m.group(1)))
+        # `export PATH="$HOME/bin:$PATH"` writes PATH and only reads HOME.
+        operand = m.group(1)
+        names.update(_WRITTEN_NAME.findall(operand))
+        if re.search(r"(?:^|\s)[\"']?\$", operand):
+            names.add("*")
     for m in _ENV_CALL.finditer(text):
         names.update(_ENV_UNSET.findall(m.group(0)))
-    if _REBIND_ALL.search(text):
+    if _REBIND_ALL.search(text) or _REBIND_SOURCE.search(_mask_quotes(text)):
         names.add("*")
     return names
+
+
+def _mask_quotes(text: str) -> str:
+    # Quoted text blanked, so `echo "the source of truth"` is not a source.
+    states, _ = _lex(text)
+    return "".join(c if st == _ACTIVE else " " for c, st in zip(text, states))
 
 
 def _is_rebound(name: str, ctx: dict) -> bool:
     return name in ctx["rebound"] or "*" in ctx["rebound"]
 
 
+_TOPLEVEL_SPELLINGS = {
+    "$(git rev-parse --show-toplevel)",
+    "`git rev-parse --show-toplevel`",
+}
+
+
+def _git_toplevel(cwd: str):
+    # `cd "$(git rev-parse --show-toplevel)"` is how agents reach a repo
+    # root. Asking git directly keeps it a known directory. GIT_* variables
+    # are dropped so an inherited GIT_DIR cannot redirect the answer.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    try:
+        r = subprocess.run(
+            ["git", "-C", cwd, "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=1,
+            env=env,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    top = r.stdout.strip()
+    return os.path.normpath(top) if r.returncode == 0 and os.path.isabs(top) else None
+
+
 def _apply_cd(tokens: list, where: _State, ctx: dict) -> bool:
     i = 0
-    while i < len(tokens) and _prog(tokens[i]) in _CD_PREFIX:
+    while i < len(tokens) and (
+        _prog(tokens[i]) in _CD_PREFIX or (i > 0 and tokens[i].startswith("-"))
+    ):
         i += 1
     if i >= len(tokens) or _prog(tokens[i]) not in CD_COMMANDS | {"popd"}:
         return False
@@ -676,7 +849,11 @@ def _apply_cd(tokens: list, where: _State, ctx: dict) -> bool:
         # `if x; then cd /; fi` or `while cd /`: the hook cannot know
         # whether the directory changed.
         new = None
-    elif _prog(tokens[i]) == "popd" or (_prog(tokens[i]) == "pushd" and not args):
+    elif (
+        _prog(tokens[i]) == "popd"
+        or (_prog(tokens[i]) == "pushd" and not args)
+        or re.fullmatch(r"[-+]\d+", args[0] if args else "")
+    ):
         # The directory stack is not tracked.
         new = None
     elif not args:
@@ -684,14 +861,22 @@ def _apply_cd(tokens: list, where: _State, ctx: dict) -> bool:
     elif args[0] == "-":
         new = where.prev if where.prev is not None else where.cwd
     elif relative and (
-        _is_rebound("HOME", ctx)
+        (_is_rebound("HOME", ctx) and args[0].startswith("~"))
         or _is_rebound("CDPATH", ctx)
         or (os.environ.get("CDPATH") and not args[0].startswith("."))
     ):
         # ~ follows the new HOME, and a relative cd searches CDPATH first.
         new = None
+    elif args[0] in _TOPLEVEL_SPELLINGS and where.cwd is not None:
+        new = _git_toplevel(where.cwd)
     else:
-        t = _expand(args[0], home)
+        t = args[0]
+        if "$" in t:
+            # `S=/tmp/x; cd $S/f2` resolves through the same rules as an rm
+            # target, and anything ambiguous stays unknown.
+            cands = _expand_variables(t, where, ctx)
+            t = cands[0] if cands and len(cands) == 1 else "$"
+        t = _expand(t, home)
         if _unresolvable(t) or (where.cwd is None and not os.path.isabs(t)):
             new = None
         else:
@@ -705,7 +890,12 @@ def _apply_cd(tokens: list, where: _State, ctx: dict) -> bool:
 def _var_values(name: str, where: _State, ctx: dict, bound: bool):
     # The values a name can hold at this point, or None when unknown. An
     # unset $TMPDIR is known: it expands to nothing.
-    if _is_rebound(name, ctx):
+    if name in ctx["literals"] and "*" not in ctx["rebound"]:
+        # `S=/tmp/x; rm -rf $S/y`: bound where the assignment ran, unknown
+        # before it.
+        if not bound or name not in where.vars:
+            return None
+    elif _is_rebound(name, ctx):
         return None
     if bound and name in where.vars:
         values = []
@@ -721,6 +911,9 @@ def _var_values(name: str, where: _State, ctx: dict, bound: bool):
         return None if where.cwd is None else [where.cwd]
     if name == "TMPDIR":
         return [os.environ.get("TMPDIR", "").rstrip("/")]
+    if name == "CLAUDE_PROJECT_DIR" and os.environ.get(name):
+        # Set by Claude Code for hooks, the same trust as $TMPDIR.
+        return [os.environ[name].rstrip("/")]
     return None
 
 
@@ -745,22 +938,118 @@ def _expand_variables(raw: str, where: _State, ctx: dict, bound: bool = True):
         if default:
             values = [v for v in values if v] + [default.group(1)]
         candidates = [v + rest for v in values]
+    resolved = []
     for cand in candidates:
-        if "$" in cand or "`" in cand:
+        # Plain references later in the word: `./$d`, `red_$base`, `$S/$x`.
+        more = _substitute_refs(cand, where, ctx, bound)
+        if more is None or len(resolved) + len(more) > _MAX_CANDIDATES:
             return None
-        if _is_rebound("HOME", ctx) and (cand == "~" or cand.startswith("~/")):
+        resolved.extend(more)
+    final = []
+    for cand in resolved:
+        if "$" in cand or "`" in cand:
             return None
         if re.match(r"~[-+0-9]", cand):
             # ~+ is $PWD, ~- is $OLDPWD, ~N is the directory stack.
             return None
-    return candidates
+        if _is_rebound("HOME", ctx) and (cand == "~" or cand.startswith("~/")):
+            # The new HOME is unknown. `~/.cache/pip` is judged under the
+            # real home and under /, and a tail that ends a protected path
+            # (`~/rock/proj` with HOME=/home) stays unresolved.
+            tail = os.path.normpath(cand[2:]) if cand != "~" else ""
+            if tail in ("", ".") or tail.startswith(".."):
+                return None
+            if any(p.endswith("/" + tail) for p in ctx["protected_paths"]):
+                return None
+            final.extend([os.path.join(ctx["home"], tail), "/" + tail])
+            continue
+        final.append(cand)
+    return final
+
+
+_REF = re.compile(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))")
+
+
+def _substitute_refs(cand: str, where: _State, ctx: dict, bound: bool):
+    # Every plain $NAME or ${NAME} in the word replaced by each value it can
+    # hold, or None when one is unknown. Anything else with a `$` is left
+    # for the caller to treat as unresolved.
+    outs = [cand]
+    for _ in range(8):
+        pending = [o for o in outs if _REF.search(o)]
+        if not pending:
+            return outs
+        nxt = [o for o in outs if not _REF.search(o)]
+        for o in pending:
+            m = _REF.search(o)
+            values = _var_values(m.group(1) or m.group(2), where, ctx, bound)
+            if values is None:
+                return None
+            nxt.extend(o[: m.start()] + v + o[m.end() :] for v in values)
+            if len(nxt) > _MAX_CANDIDATES:
+                return None
+        outs = nxt
+    return None
 
 
 def _names_protected(cmd: str, config_root: str) -> bool:
-    # Whether the command text spells a credential store or the config root
-    # anywhere, assignments and quoted strings included.
+    # Whether the command, heredoc prose aside, spells a credential store or
+    # the config root as a whole path component: `~/.ssh/*` counts,
+    # `~/.claude-mem` and `known_hosts` do not.
+    text = _strip_heredocs(cmd)
     names = (*CREDENTIAL_STORES, os.path.basename(config_root), ".claude.json")
-    return any(name in cmd for name in names)
+    alts = "|".join(re.escape(n) for n in names)
+    return (
+        re.search(rf"(?:^|[\s/'\"=:~])(?:{alts})(?=$|[\s/'\";&|)*])", text) is not None
+    )
+
+
+# `NAME=value` as a whole statement. The value is literal text plus plain
+# references ($NAME, ${NAME}) and the numeric $$, $RANDOM, and $BASHPID.
+# A command substitution or backtick can print `../..`, so it never counts.
+_LIT_REF = r"\$(?:\$|\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)"
+# `$(mktemp)`, `$(mktemp -d)`, or `$(mktemp -d -t name.XXXXXX)` always
+# names a fresh path under the scratch root. -p and --tmpdir pick another
+# directory, so they do not count.
+_MKTEMP = r"\$\(\s*mktemp(?:\s+-[dqtu]+)*(?:\s+[\w.-]*X{3,}[\w.-]*)?\s*\)"
+_LIT_VALUE = (
+    _MKTEMP + r"|\"" + _MKTEMP + r"\""
+    r"|'[^'$`]*'"
+    r"|\"(?:[^\"$`\\]|" + _LIT_REF + r")*\""
+    r"|(?:[^\s;&|$`'\"()<>\\{}*?\[]|" + _LIT_REF + r")+"
+)
+_LIT_STMT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(" + _LIT_VALUE + r")")
+_LIT_ASSIGN = re.compile(
+    r"(?:\A|[;\n])[ \t]*([A-Za-z_][A-Za-z0-9_]*)=(?:" + _LIT_VALUE + r")"
+    r"[ \t]*(?=;|\n|&&|\Z)"
+)
+_NUMERIC_REF = re.compile(r"\$(?:\$|\{\$\}|RANDOM\b|\{RANDOM\}|BASHPID\b|\{BASHPID\})")
+_BLOCK_WORDS = re.compile(
+    r"\b(?:if|then|else|elif|while|until|for|do|case|select|function|coproc)\b"
+    r"|\(\s*\)|(?<!\$)\{"
+)
+_SPECIAL_NAMES = {"HOME", "PWD", "OLDPWD", "TMPDIR", "CDPATH", "IFS", "PATH"}
+
+
+def _literals(cmd: str) -> set:
+    # Names a flat command (no block, loop, function, or heredoc) assigns
+    # exactly once, as a statement of its own after the start, `;`, or a
+    # newline, with a literal value. scan() binds each where its statement
+    # runs, so `S=/tmp/x; rm -rf $S/y` judges /tmp/x/y and a use before
+    # the assignment stays unknown.
+    cmd = _strip_heredocs(cmd)
+    if _BLOCK_WORDS.search(cmd):
+        return set()
+    names = set()
+    for m in _LIT_ASSIGN.finditer(cmd):
+        name = m.group(1)
+        if name in _SPECIAL_NAMES:
+            continue
+        writes = re.findall(rf"(?<![\w$]){name}(?:\[[^\]\n]{{0,64}}\])?\+?=", cmd)
+        others = _rebound(re.sub(rf"(?<![\w$]){name}=", " ", cmd))
+        if len(writes) == 1 and name not in others and "*" not in others:
+            names.add(name)
+    return names
 
 
 def _literal_tail(raw: str) -> str:
@@ -940,7 +1229,7 @@ def _judge_targets(
                 # `HOME=/; cd; rm -rf usr`: the cwd may be the root, so a
                 # recursive target named like a real top-level directory
                 # denies. `cd $X && rm -rf build` still passes.
-                first = cand.split("/", 1)[0]
+                first = os.path.normpath(cand).split("/", 1)[0]
                 if (
                     (recursive or is_glob)
                     and first not in ("", ".", "..")
@@ -1027,6 +1316,9 @@ def _check_tokens(
             t.rstrip(";") for t in tokens[3:] if t.rstrip(";") and t not in ("do", ";")
         ]
         return None
+    if tokens and tokens[0] == "trap" and len(tokens) > 1:
+        # `trap 'rm -rf ~' EXIT` runs its first argument later.
+        return scan(tokens[1], ctx, depth + 1, where.copy())
     if tokens and tokens[0] == "alias":
         for tok in tokens[1:]:
             if "=" in tok:
@@ -1037,12 +1329,12 @@ def _check_tokens(
     remote = False
     for i, tok in enumerate(tokens):
         prog = _prog(tok)
-        if prog in REMOTE_PROGRAMS:
+        if _is_remote(tokens, i):
             remote = True
             continue
         if prog == "eval":
             return scan(" ".join(tokens[i + 1 :]), ctx, depth + 1, where.copy())
-        if prog in SHELLS:
+        if prog in SHELLS or prog in C_RUNNERS:
             rest = tokens[i + 1 :]
             for j, t in enumerate(rest):
                 is_c = t == "-c" or (
@@ -1052,22 +1344,39 @@ def _check_tokens(
                     return scan(rest[j + 1], ctx, depth + 1, where.copy())
                 if t == "<<<" and j + 1 < len(rest):
                     return scan(rest[j + 1], ctx, depth + 1, where.copy())
+                if t.startswith("<<<") and len(t) > 3:
+                    return scan(t[3:], ctx, depth + 1, where.copy())
             # A shell reading its script from a pipe runs whatever the
             # previous segment printed. Scan that segment's tokens, each
             # on its own and all of them joined, so both `echo 'rm -rf ~'`
             # and `printf 'rm -rf %s' ~` are seen.
-            if pipe_sink and not any(not t.startswith("-") for t in rest):
+            stdin = ("-", "/dev/stdin", "/dev/fd/0")
+            if pipe_sink and all(t.startswith("-") or t in stdin for t in rest):
                 for script in [*prev_tokens[1:], " ".join(prev_tokens[1:])]:
                     hit = scan(script, ctx, depth + 1, where.copy())
                     if hit:
                         return hit
             continue
-        if prog == "xargs" and pipe_sink:
-            sink = [_prog(t) for t in tokens[i + 1 :]]
-            if any(s in REMOVERS for s in sink):
+        if prog == "xargs":
+            after = tokens[i + 1 :]
+            sink = [_prog(t) for t in after]
+            if not any(s in REMOVERS for s in sink):
+                continue
+            from_file = any(
+                t in ("-a", "--arg-file") or t.startswith("--arg-file=") for t in after
+            )
+            if pipe_sink and not from_file:
                 hit = _judge_targets(prev_tokens[1:], True, where, ctx, force_glob=True)
                 if hit:
                     return hit
+            elif any(_RECURSIVE.fullmatch(t) for t in after):
+                # Targets read from a file, a redirect, or a heredoc are out
+                # of sight, the same as an unresolved variable.
+                return (
+                    "<xargs input>",
+                    "<unresolved variable>",
+                    "unresolved variable target",
+                )
             continue
         if prog == "mv" and not remote:
             hit = _check_move(tokens[i + 1 :], where, ctx)
@@ -1099,31 +1408,52 @@ def scan(cmd: str, ctx: dict, depth: int = 0, where: _State = None, groups: int 
         return ("<nested>", "<nested>", f"group nesting beyond {_MAX_GROUPS}")
     if where is None:
         where = _State(ctx["session_cwd"])
-    ctx["rebound"] |= _rebound(cmd)
     fed = []
     cleaned = _strip_heredocs(cmd, fed)
+    ctx["rebound"] |= _rebound(cleaned)
     for body in fed:
         hit = scan(body, ctx, depth + 1, where.copy())
         if hit:
             return hit
-    segments = _split_segments(cleaned)
+    segments, balanced = _split_segments(cleaned)
+    if not balanced:
+        ctx["rebound"].add("*")
+        where.cwd = None
     tokenized = [(_tokenize(seg), sub, sink, raw) for seg, sub, sink, raw in segments]
     for tokens, _, _, _ in tokenized:
         ctx["rebound"] |= _rebound(" ".join(tokens))
     prev_tokens = []
     for tokens, subshell, pipe_sink, raw in tokenized:
+        lit = _LIT_STMT.fullmatch(raw.strip())
+        if lit and lit.group(1) in ctx["literals"]:
+            value = _NUMERIC_REF.sub("0", lit.group(2).strip("\"'"))
+            scratch = os.environ.get("TMPDIR", "").rstrip("/") or "/tmp"
+            value = re.sub(_MKTEMP, scratch + "/tmp.mktemp", value)
+            values = _substitute_refs(value, where, ctx, True)
+            if values is not None and len(values) == 1:
+                where.vars[lit.group(1)] = values
+            prev_tokens = tokens
+            continue
         # A ( ) group and each $( ), <( ), >( ), or backtick body run in a
         # subshell: they see the directory as it stands here, and a cd
         # inside them applies to their own later commands only.
-        group = _group_body(raw)
-        inners = [group] if group is not None else _substitutions(raw)
-        for inner in inners:
+        bodies, rest = _groups(raw)
+        subs = _substitutions(rest)
+        for inner in bodies + subs:
             hit = scan(inner, ctx, depth, where.copy(), groups + 1)
             if hit:
                 return hit
-        if group is not None:
-            prev_tokens = tokens
-            continue
+        if {_prog(t) for t in tokens} & (SHELLS | {"source", "."}):
+            # `bash <(echo 'rm -rf ~')`: the substitution prints a script.
+            for inner in subs:
+                printed = _tokenize(inner)[1:]
+                for script in [*printed, " ".join(printed)]:
+                    hit = scan(script, ctx, depth + 1, where.copy())
+                    if hit:
+                        return hit
+        if bodies:
+            tokens = _tokenize(_clean_segment(rest))
+            subshell = False
         hit = _check_tokens(
             tokens,
             where.copy() if subshell else where,
@@ -1134,6 +1464,12 @@ def scan(cmd: str, ctx: dict, depth: int = 0, where: _State = None, groups: int 
         )
         if hit:
             return hit
+        if _OPAQUE.search(_mask_quotes(raw)):
+            # A function, case, trap, coproc, select, eval, source, ., the
+            # directory stack, or a script on stdin can change the directory
+            # and any name in ways this scanner does not model, from here on.
+            ctx["rebound"].add("*")
+            where.cwd = None
         prev_tokens = tokens
     return None
 
@@ -1155,6 +1491,13 @@ def main() -> int:
     cmd = (data.get("tool_input", {}) or {}).get("command", "")
     if not cmd:
         return 0
+    if len(cmd) > _MAX_COMMAND or cmd.count("<<") > _MAX_HEREDOCS:
+        # Parsing cost grows with these. Deny fast instead of running into
+        # the 10 second timeout, which blocks too but says less.
+        return _block(
+            "PreToolUse-bash-deny-rm-protected-paths: command too large to judge "
+            f"(over {_MAX_COMMAND} bytes or {_MAX_HEREDOCS} heredocs). Split it."
+        )
     home = os.path.abspath(os.path.expanduser("~"))
     config_root = os.path.abspath(
         os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude")
@@ -1167,7 +1510,20 @@ def main() -> int:
         "scratch_roots": _scratch_roots(home),
         "rebound": set(),
         "names_protected": _names_protected(cmd, config_root),
+        "literals": _literals(cmd),
     }
+    ancestors, cur = [], ctx["session_cwd"]
+    while True:
+        ancestors.append(cur)
+        if os.path.dirname(cur) == cur:
+            break
+        cur = os.path.dirname(cur)
+    ctx["protected_paths"] = [
+        *ancestors,
+        home,
+        config_root,
+        *(os.path.join(home, c) for c in CREDENTIAL_STORES),
+    ]
     hit = scan(cmd, ctx)
     if not hit:
         return 0
