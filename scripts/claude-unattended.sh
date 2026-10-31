@@ -15,17 +15,37 @@
 # Usage:
 #   scripts/claude-unattended.sh "<prompt>" [any other claude -p flags]
 #   HARNESS_SETTINGS=/path/settings.json scripts/claude-unattended.sh ...
+#   scripts/claude-unattended.sh -h|--help   prints this header and exits 0
 #
-# Exit codes: 0 pass-through of claude; 2 a precondition failed (nothing ran).
+# Settings default to ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json, the
+# same directory the gate probe reads hooks from.
+#
+# Cron and systemd start jobs with a minimal PATH that often lacks the
+# claude binary (~/.local/bin, a Homebrew prefix, an npm global prefix).
+# Set CLAUDE_BIN=/absolute/path/to/claude, or set PATH in the crontab line
+# or the unit's Environment= line. Find the path with `command -v claude`
+# in an interactive shell.
+#
+# Exit codes: 0 pass-through of claude, 2 a precondition failed (nothing ran).
 #
 # Threat: foundation/01-threat-model.md T.7 (silent capability erosion).
 # Owner: harness-engineering (October 30, 2026)
 
 set -euo pipefail
 
+# Help is answered here, before any check, so it never reaches claude -p
+# as a prompt. Only the first argument is read: later ones belong to claude.
+case "${1:-}" in
+  -h|--help)
+    awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
+    exit 0
+    ;;
+esac
+
 FLOOR="2.1.295"
 PIN_MAJOR_MINOR="2.1"
-SETTINGS="${HARNESS_SETTINGS:-$HOME/.claude/settings.json}"
+SETTINGS="${HARNESS_SETTINGS:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json}"
+CLAUDE_BIN="${CLAUDE_BIN:-claude}"
 HOOKS_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks"
 GATES=(
   PreToolUse-bash-deny-rm-protected-paths.py
@@ -38,13 +58,13 @@ GATES=(
 
 fail() { echo "claude-unattended: $*" >&2; exit 2; }
 
-command -v claude >/dev/null 2>&1 || fail "claude is not on PATH"
+command -v "$CLAUDE_BIN" >/dev/null 2>&1 || fail "$CLAUDE_BIN is not on PATH, set CLAUDE_BIN or PATH (see --help)"
 command -v python3 >/dev/null 2>&1 || fail "python3 is not on PATH; every gate needs it"
 [[ -f "$SETTINGS" ]] || fail "settings file not found: $SETTINGS"
 
 # Version: at or above the floor where onFailure: block exists, and within
 # the pinned minor range (AP.9). sort -V orders dotted versions.
-version="$(claude --version 2>/dev/null | awk '{print $1}')"
+version="$("$CLAUDE_BIN" --version 2>/dev/null | awk '{print $1}')"
 [[ -n "$version" ]] || fail "could not read claude --version"
 lowest="$(printf '%s\n%s\n' "$FLOOR" "$version" | sort -V | head -1)"
 [[ "$lowest" == "$FLOOR" ]] || fail "claude $version is below the harness floor $FLOOR (fail-closed hooks need it)"
@@ -144,7 +164,7 @@ done <<< "$probes"
 # Not exec: the EXIT trap has to remove the merged settings copy, which can
 # carry the same env and helper settings as the original.
 set +e
-claude -p --settings "$MERGED" "$@"
+"$CLAUDE_BIN" -p --settings "$MERGED" "$@"
 rc=$?
 set -e
 exit "$rc"

@@ -8,7 +8,8 @@ Compares the hooks registered in the Mac reference file
 (event, matcher, hook basename). Each source is allowed a documented set of
 extras; anything else that differs is drift. The six fail-closed
 hooks must carry onFailure: block, the exec form under python3 -I, and a
-timeout, in every source that registers them.
+timeout, in every source that registers them. Every live registration
+must point at a script file that exists.
 
 The live side also reads root-owned managed settings. A hook registered
 there counts as live, must use an absolute interpreter, and must not also
@@ -105,6 +106,20 @@ def basename_of(entry: dict) -> str:
     if path is None:
         path = entry.get("command", "")
     return os.path.basename(path.strip('"').split()[-1]) if path else ""
+
+
+def script_path_of(entry: dict) -> str:
+    # The same token basename_of reads, with ~ and $HOME expanded. Only those
+    # two are expanded: a path that still carries another variable cannot be
+    # resolved here and returns "" rather than a false missing-file report.
+    raw = (entry.get("args") or [entry.get("command") or ""])[-1] or ""
+    token = raw.strip('"').split()[-1] if raw.strip() else ""
+    home = os.path.expanduser("~")
+    token = token.replace("${HOME}", home).replace("$HOME", home)
+    token = os.path.expanduser(token)
+    if "$" in token or not os.path.isabs(token):
+        return ""
+    return token
 
 
 def registrations(path: str) -> dict:
@@ -231,6 +246,16 @@ def main() -> int:
         present = {k[2] for k in regs[label]}
         for name in sorted(DESTRUCTIVE - present):
             drift.append(f"{label}: destructive-class hook {name} is not registered")
+    # Matching names prove nothing when the registered file is gone: Claude
+    # Code then fails the hook on every event. Live paths are absolute after
+    # deploy. Template paths carry {{REPO_ROOT}} and cannot be resolved.
+    if "live" in regs:
+        for key, entry in sorted(regs["live"].items()):
+            script = script_path_of(entry)
+            if script and not os.path.isfile(script):
+                drift.append(
+                    f"live: {key[2]} on {key[0]} is registered at {script}, which does not exist"
+                )
     for line in drift:
         print(f"drift: {line}")
     if drift:

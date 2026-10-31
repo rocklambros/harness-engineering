@@ -4,7 +4,9 @@
 # Copies hook scripts byte-for-byte into ~/.claude/hooks/. Renders the
 # platform settings template (substituting {{REPO_ROOT}}) and diffs the
 # hooks block against the deployed ~/.claude/settings.json so the operator
-# can apply the change manually. Does NOT overwrite settings.json: the
+# can apply the change manually. Records the checkout path in
+# ~/.claude/harness-repo-root so the deployed session-start.sh can find
+# scripts/drift-check.sh. Does NOT overwrite settings.json: the
 # deployed copy typically carries operator personalizations (model
 # selection, plugins, MCP servers, custom permission allows) that a
 # wholesale overwrite would destroy.
@@ -39,7 +41,7 @@ while (( $# > 0 )); do
       shift
       ;;
     -h|--help)
-      sed -n '2,15p' "$0"
+      sed -n '2,17p' "$0"
       exit 0
       ;;
     *)
@@ -130,6 +132,23 @@ for src in "$SRC_HOOKS"/*.sh "$SRC_HOOKS"/*.py; do
 done
 shopt -u nullglob
 echo "Hook files changed: $hooks_changed"
+
+# --- Repo root marker: lets deployed hooks find this checkout --------------
+
+# session-start.sh runs from ~/.claude/hooks/, where its own location says
+# nothing about the checkout. Without this marker it looked for
+# scripts/drift-check.sh under $HOME and skipped the drift check on every
+# session from May 20, 2026 on. The hook reads the same path.
+echo ""
+echo "=== Repo root marker ==="
+REPO_ROOT_FILE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/harness-repo-root"
+if (( DRY_RUN )); then
+  echo "  WOULD RECORD: $REPO_ROOT in $REPO_ROOT_FILE"
+else
+  mkdir -p "$(dirname "$REPO_ROOT_FILE")"
+  printf '%s\n' "$REPO_ROOT" > "$REPO_ROOT_FILE"
+  echo "  recorded: $REPO_ROOT in $REPO_ROOT_FILE"
+fi
 
 # --- Orphan check: deployed hooks not in source ----------------------------
 
