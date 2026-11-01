@@ -249,12 +249,37 @@ _PRE_TRUST_NAMES = {
 _EXECUTABLE_TREES = {"hooks", "rules", "agents", "skills", "scripts", "workflows"}
 
 
-def _loads_or_runs_later(path: str) -> bool:
-    parts = path.split(os.sep)
-    for idx, part in enumerate(parts):
+def _is_pre_trust_path(path: str) -> bool:
+    # .git and the pre-trust config names, which a later session reads on its
+    # own if a project is opened here. Safe to apply to an absolute path:
+    # these names are specific enough that a chance directory match is not a
+    # realistic concern.
+    for part in path.split(os.sep):
         lowered = part.lower()
         if lowered == ".git" or lowered in _PRE_TRUST_NAMES:
             return True
+    return False
+
+
+def _loads_or_runs_later(path: str) -> bool:
+    # Call ONLY with a path relative to a repository top. The executable-tree
+    # names below are common directory names, so matching them against an
+    # absolute path catches any ancestor that happens to be called scripts,
+    # hooks, rules, agents or skills, wherever it lives.
+    #
+    # That is what happened on 2026-11-01: is_scratch_root passed the full
+    # absolute realpath, so a write to
+    #   <scratch>/<session>/scratchpad/rr/sec349/attack/scripts/x.py
+    # asked, while the same path without the scripts segment passed silently.
+    # The operator's standing requirement is that a scratch root never
+    # prompts, and nothing in this harness deploys or CI-runs out of /tmp, so
+    # the carve-out had no threat to answer there. Scratch roots now screen
+    # pre-trust config only, via _is_pre_trust_path.
+    if _is_pre_trust_path(path):
+        return True
+    parts = path.split(os.sep)
+    for idx, part in enumerate(parts):
+        lowered = part.lower()
         if lowered in _EXECUTABLE_TREES and (
             lowered != "workflows" or (idx > 0 and parts[idx - 1].lower() == ".github")
         ):
@@ -404,6 +429,70 @@ def is_in_any_git_worktree(abs_path: str, home: str) -> bool:
     return True
 
 
+def _operator_scoped_dirs() -> list:
+    # permissions.additionalDirectories from user settings: the directories the
+    # operator has declared in scope for the session. Claude Code already
+    # treats them as working directories, so a gate that only knows cwd
+    # disagrees with the runtime's own scope model and asks on ordinary work.
+    #
+    # Added 2026-11-01. Writing to a second checkout while cwd is elsewhere is
+    # the standing case: editing harness-engineering/mac/harness/hooks/ from
+    # ~/.claude asked on every file, because the repo-relative path carries an
+    # executable-tree segment. Declaring the checkout here is an explicit,
+    # reviewable grant, which is the right place for that decision. It does not
+    # widen anything for a repository the operator has not listed.
+    #
+    # Read defensively: this hook is registered onFailure block, so an
+    # unreadable or malformed settings file must not wedge every write. On any
+    # failure the list is empty and the target falls through to the normal
+    # classes, which ask rather than allow.
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(
+        os.path.expanduser("~"), ".claude"
+    )
+    out = []
+    try:
+        with open(os.path.join(config_dir, "settings.json"), encoding="utf-8") as handle:
+            entries = (json.load(handle).get("permissions") or {}).get(
+                "additionalDirectories"
+            )
+    except (OSError, ValueError, AttributeError):
+        return out
+    if not isinstance(entries, list):
+        return out
+    for entry in entries:
+        if not isinstance(entry, str) or not entry.strip():
+            continue
+        expanded = os.path.expanduser(os.path.expandvars(entry.strip()))
+        if not os.path.isabs(expanded):
+            continue
+        try:
+            real = os.path.realpath(expanded)
+        except OSError:
+            continue
+        # A root at / or at or above home would turn this into the whole disk.
+        if _is_home_or_ancestor(real, os.path.realpath(os.path.expanduser("~"))):
+            continue
+        out.append(real)
+    return out
+
+
+_OPERATOR_SCOPED_DIRS = _operator_scoped_dirs()
+
+
+def is_operator_scoped_dir(abs_path: str) -> bool:
+    if not _OPERATOR_SCOPED_DIRS:
+        return False
+    try:
+        real = os.path.realpath(abs_path)
+    except OSError:
+        return False
+    # Pre-trust config still gates, even inside a declared directory: a
+    # .claude/settings.json or .mcp.json there is read by a later session.
+    if _is_pre_trust_path(real):
+        return False
+    return any(_is_at_or_under(real, root) for root in _OPERATOR_SCOPED_DIRS)
+
+
 def is_scratch_root(abs_path: str, home: str) -> bool:
     # True iff abs_path is at or under a realpath'd scratch root and is not
     # a file that loads or runs in a later session. Realpath on the
@@ -422,7 +511,11 @@ def is_scratch_root(abs_path: str, home: str) -> bool:
         return False
     if any(_is_at_or_under(real_target, root) for root in config_roots):
         return False
-    if _loads_or_runs_later(real_target):
+    # Pre-trust config only. NOT _loads_or_runs_later: that screens the
+    # executable-tree names against every segment of the absolute path, and
+    # an ordinary scratch directory named scripts/ or hooks/ is not something
+    # a later session loads. See the note on _loads_or_runs_later.
+    if _is_pre_trust_path(real_target):
         return False
     return any(_is_at_or_under(real_target, root) for root in _SCRATCH_ROOTS)
 
@@ -498,6 +591,8 @@ def main() -> int:
         # Cross-drive on Windows or unrelated paths.
         common = ""
     if common == real_cwd:
+        return 0
+    if is_operator_scoped_dir(abs_path):
         return 0
     if is_claude_code_managed_store(abs_path, home):
         return 0
