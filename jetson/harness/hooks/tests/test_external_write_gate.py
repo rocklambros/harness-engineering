@@ -94,6 +94,22 @@ CASES = [
     (f"{TMPDIR}x.txt" if TMPDIR else "/tmp/x3.txt", ALLOW, {"TMPDIR": None}, "darwin"),
     (f"{USER_TEMP}x.txt", ALLOW, {"TMPDIR": None}, "darwin"),
     (f"/private{USER_TEMP}x.txt", ALLOW, {"TMPDIR": None}, "darwin"),
+    # Executable-tree NAMES under a scratch root are ordinary directories and
+    # must not gate. Regression for 2026-11-01: is_scratch_root called
+    # _loads_or_runs_later with the full absolute realpath, so any ancestor
+    # named scripts, hooks, rules, agents or skills asked, while the same path
+    # without that segment passed silently. Nothing here deploys or CI-runs
+    # out of a scratch root, and the standing requirement is that it never
+    # prompts. The .github/workflows pair is included because that carve-out
+    # is positional and must stay inert outside a repository.
+    ("/tmp/s/scratchpad/rr/sec349/attack/scripts/x.py", ALLOW, {}, None),
+    ("/tmp/s/scratchpad/hooks/f.py", ALLOW, {}, None),
+    ("/tmp/s/scratchpad/rules/f.md", ALLOW, {}, None),
+    ("/tmp/s/scratchpad/agents/f.md", ALLOW, {}, None),
+    ("/tmp/s/scratchpad/skills/f.md", ALLOW, {}, None),
+    ("/tmp/s/scratchpad/workflows/f.yml", ALLOW, {}, None),
+    ("/tmp/s/.github/workflows/ci.yml", ALLOW, {}, None),
+    ("/private/tmp/s/attack/scripts/x.py", ALLOW, {}, "darwin"),
     # pre-trust names and the config root under a scratch root stay gated
     ("/tmp/clone/.claude/settings.json", ASK, {}, None),
     ("/tmp/clone/.mcp.json", ASK, {}, None),
@@ -125,7 +141,40 @@ CASES = [
 REPO = subprocess.run(
     ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True
 ).stdout.strip()
-if REPO and not REPO.startswith(CWD):
+
+
+def _declared_in_scope(path: str) -> bool:
+    # permissions.additionalDirectories declares a directory in scope, and the
+    # gate honours that from 2026-11-01, so this repo's executable trees stop
+    # asking once the operator lists the checkout. The Class 4 cases below
+    # assert the opposite, so their premise is "a repo the operator has NOT
+    # declared". Skip them when it has been declared, rather than assert a
+    # verdict that depends on the host's settings.
+    #
+    # This is the third fixture on this branch family to read host state: row
+    # 401 of the rm matrix encoded the operator's username, the registration
+    # suite encoded the managed-gates install path, and this encoded the
+    # in-scope list. A fixture naming an absolute path outside the repo, or
+    # deriving one from the environment, is reading host state.
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(HOME, ".claude")
+    try:
+        with open(os.path.join(config_dir, "settings.json"), encoding="utf-8") as handle:
+            entries = (json.load(handle).get("permissions") or {}).get(
+                "additionalDirectories"
+            ) or []
+    except (OSError, ValueError, AttributeError):
+        return False
+    real = os.path.realpath(path)
+    for entry in entries:
+        if not isinstance(entry, str) or not entry.strip():
+            continue
+        root = os.path.realpath(os.path.expanduser(os.path.expandvars(entry.strip())))
+        if real == root or real.startswith(root.rstrip(os.sep) + os.sep):
+            return True
+    return False
+
+
+if REPO and not REPO.startswith(CWD) and not _declared_in_scope(REPO):
     CASES += [
         # Class 4: ordinary source in another repo passes, its executable trees ask
         (f"{REPO}/README.md", ALLOW, {}, None),
